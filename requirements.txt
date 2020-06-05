@@ -1,0 +1,4 @@
+lxml
+torch
+pytorch_lightning
+transformers
