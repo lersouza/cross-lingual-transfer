@@ -8,6 +8,14 @@ from transformers import PreTrainedTokenizer
 from typing import List
 
 
+MNLI_PAIRID_INDEX = 2
+MNLI_SEQ1_INDEX = 8
+MNLI_SEQ2_INDEX = 9
+MNLI_LABEL_INDEX = -1
+
+DEFAULT_LABELS = ['neutral', 'entailment', 'contradiction']
+
+
 @dataclass
 class NLIExample:
     """ Represents and example for NLI tasks. """
@@ -22,14 +30,17 @@ class NLIDataset(Dataset):
     """
     This class holds data for NLI tasks in NLP models.
 
-    It provides a __getitem__ implementation which captures the necessary information
-    for model training: first_sequence, second_sequence and labels (all encoded).
+    It provides a __getitem__ implementation which captures the necessary
+    information for model training:
+        - first_sequence
+        - second_sequence
+        - labels
     """
-    def __init__(self, 
+    def __init__(self,
                  examples: List[NLIExample],
                  tokenizer: PreTrainedTokenizer,
                  max_seq_length: int = 512,
-                 labels: List[str] = ['neutral', 'entailment', 'contradiction']):
+                 labels: List[str] = DEFAULT_LABELS):
         self.examples = examples
         self.tokenizer = tokenizer
         self.labels = labels
@@ -68,12 +79,6 @@ class NLIDataset(Dataset):
         )
 
 
-MNLI_PAIRID_INDEX = 2
-MNLI_SEQ1_INDEX = 8
-MNLI_SEQ2_INDEX = 9
-MNLI_LABEL_INDEX = -1
-
-
 def load_mnli_dataset(root_path: str, file_name: str,
                       tokenizer: PreTrainedTokenizer,
                       max_seq_length: int = 512):
@@ -94,8 +99,9 @@ def load_mnli_dataset(root_path: str, file_name: str,
     with open(full_path, 'r', encoding='utf-8') as tsv_file:
         file_lines = tsv_file.readlines()
 
-        for i, line in enumerate(file_lines, 1): # Skipping headers
-            if line:
+        for i in range(1, len(file_lines)):  # Skipping headers
+            line = file_lines[i]
+            if line and line.strip():
                 examples.append(parse_mnli_sample(i, line.strip()))
 
     return NLIDataset(examples, tokenizer, max_seq_length=max_seq_length)
@@ -108,12 +114,12 @@ def parse_mnli_sample(row_index, raw_sample) -> NLIExample:
     example = NLIExample(
         sample_parts[MNLI_PAIRID_INDEX],
         row_index,
-        sample_parts[MNLI_SEQ1_INDEX], 
+        sample_parts[MNLI_SEQ1_INDEX],
         sample_parts[MNLI_SEQ2_INDEX],
         sample_parts[MNLI_LABEL_INDEX])
 
     return example
-    
+
 
 def load_assin_dataset(root_path, file_name):
     pass

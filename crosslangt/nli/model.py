@@ -8,11 +8,10 @@ from transformers import (
 )
 
 
-class BERTNLIModel(pl.LightningModule):
+class BERTNLIFineTuneModel(pl.LightningModule):
     """
     A model for training and testing BERT in NLI tasks.
     """
-    
     def __init__(self, hparams: Namespace):
         super().__init__()
 
@@ -23,7 +22,6 @@ class BERTNLIModel(pl.LightningModule):
             hparams.base_model_name)
 
         self.tokenizer = BertTokenizer.from_pretrained(hparams.base_model_name)
-
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
         """
@@ -45,7 +43,7 @@ class BERTNLIModel(pl.LightningModule):
         parameters = [p for p in self.parameters() if p.requires_grad]
 
         return torch.optim.Adam(parameters, lr=self.hparams.lr)
- 
+
     def training_step(self, batch, batch_idx):
         pass
 
@@ -60,7 +58,3 @@ class BERTNLIModel(pl.LightningModule):
 
     def val_dataloader(self):
         pass
-
-
-
-
