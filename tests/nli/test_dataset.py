@@ -1,3 +1,4 @@
+import torch
 import unittest
 
 from unittest.mock import (
@@ -7,12 +8,15 @@ from unittest.mock import (
 )
 
 from crosslangt.nli.dataset import (
+    DEFAULT_LABELS,
     NLIDataset,
     NLIExample,
     load_mnli_dataset,
     parse_mnli_sample,
     load_assin_dataset
 )
+
+from transformers import BertTokenizer
 
 
 MNLI_LINE_SAMPLE = '9814\t76653\t76653c\ttelephone\t\t\t\t\ti\'ll listen  and agree with what i think sounds right\tI wont even bother listening.\tcontradiction\tcontradiction\tcontradiction\tcontradiction \tcontradiction \tcontradiction'
@@ -42,7 +46,6 @@ class DatasetsTestCase(unittest.TestCase):
         self.assertEqual(dataset.tokenizer, bert_tokenizer)
         self.assertEqual(dataset.max_seq_length, 256)
 
-
     def test_parse_valid_mnli_sample(self):
         example = parse_mnli_sample(0, MNLI_LINE_SAMPLE)
         
@@ -56,6 +59,54 @@ class DatasetsTestCase(unittest.TestCase):
             'I wont even bother listening.')
         self.assertEqual(example.label, 'contradiction')
 
+    def test_dataset_sample_contract(self):
+        dataset = self.__build_demo_dataset()
+        dataset_sample = dataset[0]
+        dataset_sample_keys = dataset_sample.keys()
+
+        self.assertIn('input_ids', dataset_sample_keys)
+        self.assertIn('attention_mask', dataset_sample_keys)
+        self.assertIn('token_type_ids', dataset_sample_keys)
+        self.assertIn('label', dataset_sample_keys)
+
+#    def test_dataset_sample_tokenization(self):
+#        bert_tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+#
+#        dataset = self.__build_demo_dataset(tokenizer=bert_tokenizer,
+#                                            max_seq_length=15)
+#        sample = dataset[0]
+#        original_example = dataset.examples[0]
+#
+#        encoded = bert_tokenizer.encode_plus(
+#            original_example.sentence_a,
+#            original_example.sentence_b,
+#            max_length=15,
+#            pad_to_max_length=True,
+#            return_tensors='pt')
+#
+#        eq = torch.eq
+#        is_true = self.assertTrue
+#
+#        is_true(eq(sample['input_ids'], encoded['input_ids']))
+#        is_true(eq(sample['attention_mask'], encoded['attention_mask']))
+#        is_true(eq(sample['token_type_ids'], encoded['token_type_ids']))
+#
+#        self.assertEquals(sample['label'].item(),
+#                          DEFAULT_LABELS.index('neutral'))
+
+    def __build_demo_dataset(self, tokenizer=None, max_seq_length=15):
+        examples = [
+            NLIExample('1', 0, 'some sentence', 'another sentence', 'neutral'),
+            NLIExample('2', 1, 'afirmation', 'contradiction', 'contraditction'),
+            NLIExample('3', 2, 'afirmation 2', 'entailment', 'entailment')
+        ]
+
+        # Perhaps I should mock the tokenizer?
+        tokenizer = tokenizer or BertTokenizer.from_pretrained('bert-base-cased')
+        dataset = NLIDataset(examples, tokenizer, max_seq_length=max_seq_length)
+
+        return dataset
+ 
 
 if __name__ == '__main__':
     unittest.main()
