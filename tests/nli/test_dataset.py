@@ -46,8 +46,8 @@ class DatasetsTestCase(unittest.TestCase):
     def test_parse_valid_mnli_sample(self):
         example = parse_mnli_sample(0, MNLI_LINE_SAMPLE)
         
-        self.assertEqual(example.pairID, '76653c')
-        self.assertEqual(example.originalIndex, 0)
+        self.assertEqual(example.pair_id, '76653c')
+        self.assertEqual(example.original_index, 0)
         self.assertTrue(
             example.sentence_a,
             'i\'ll listen  and agree with what i think sounds right')

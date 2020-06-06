@@ -19,8 +19,8 @@ DEFAULT_LABELS = ['neutral', 'entailment', 'contradiction']
 @dataclass
 class NLIExample:
     """ Represents and example for NLI tasks. """
-    pairID: int
-    originalIndex: int
+    pair_id: int
+    original_index: int
     sentence_a: str
     sentence_b: str
     label: str
