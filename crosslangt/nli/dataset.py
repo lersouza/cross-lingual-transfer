@@ -13,7 +13,10 @@ MNLI_SEQ1_INDEX = 8
 MNLI_SEQ2_INDEX = 9
 MNLI_LABEL_INDEX = -1
 
-DEFAULT_LABELS = ['neutral', 'entailment', 'contradiction']
+LABEL_SCHEMES = {
+    'mnli': ['neutral', 'entailment', 'contradiction'],
+    'assin': ['entailment', 'neutral']
+}
 
 
 @dataclass
@@ -81,6 +84,16 @@ class NLIDataset(Dataset):
         }
 
 
+def get_num_labels_by_scheme(scheme):
+    """
+    Returns the number of labels in the specified scheme (for instance, mnli)
+    """
+    if scheme not in LABEL_SCHEMES:
+        raise ValueError(f'Scheme {scheme} is not know!')
+
+    return len(LABEL_SCHEMES[scheme])
+
+
 def load_mnli_dataset(root_path: str, file_name: str,
                       tokenizer: PreTrainedTokenizer,
                       max_seq_length: int = 512):
@@ -94,7 +107,7 @@ def load_mnli_dataset(root_path: str, file_name: str,
     full_path = os.path.join(root_path, file_name)
 
     if not os.path.exists(full_path):
-        raise ValueError(f'The file {full_path} does not exist.')
+        raise ValueError(fine-tuning f'The file {full_path} does not exist.')
 
     examples = []
 

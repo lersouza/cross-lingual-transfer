@@ -2,6 +2,9 @@ import torch
 import pytorch_lightning as pl
 
 from argparse import Namespace
+from crosslangt.nli.dataset import (
+    get_num_labels_by_scheme
+)
 from transformers import (
     BertConfig,
     BertForSequenceClassification,
@@ -19,8 +22,12 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         self.hparams = hparams
 
         # Modules
+        bert_config = BertConfig.from_pretrained(
+            hparams.base_model_name,
+            num_labels=get_num_labels_by_scheme(hparams.label_scheme))
+
         self.bert_model = BertForSequenceClassification.from_pretrained(
-            hparams.base_model_name)
+            hparams.base_model_name, config=bert_config)
 
         self.tokenizer = BertTokenizer.from_pretrained(hparams.base_model_name)
 
@@ -44,6 +51,7 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         return torch.optim.Adam(self.paramaters(), lr=self.hparams.lr)
 
     def training_step(self, batch, batch_idx):
+        """ Runs a training step for the specified (mini-)batch. """
         _, input_ids, att_masks, tok_types, labels = batch
 
         outputs = self(
@@ -63,6 +71,9 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         pass
 
     def validation_epoch_end(self, outputs):
+        pass
+
+    def prepare_data(self):
         pass
 
     def train_dataloader(self):
