@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 
 from argparse import Namespace
 from transformers import (
+    BertConfig,
     BertForSequenceClassification,
     BertTokenizer
 )
@@ -40,12 +41,23 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         Configure the optimizer.
         For this experiment, we always use Adam without decay.
         """
-        parameters = [p for p in self.parameters() if p.requires_grad]
-
-        return torch.optim.Adam(parameters, lr=self.hparams.lr)
+        return torch.optim.Adam(self.paramaters(), lr=self.hparams.lr)
 
     def training_step(self, batch, batch_idx):
-        pass
+        _, input_ids, att_masks, tok_types, labels = batch
+
+        outputs = self(
+            input_ids=input_ids,
+            attention_mask=att_masks,
+            token_type_ids=tok_types,
+            labels=labels)
+
+        # When labels are provided, the first item in the output tuple
+        # is the calculated loss for the batch
+        loss = outputs[0]
+        logs = {'training_loss': loss}
+
+        return {'loss': loss, 'log': logs}
 
     def validation_step(self, batch, batch_idx):
         pass
