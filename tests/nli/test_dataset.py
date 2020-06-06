@@ -32,8 +32,8 @@ class DatasetsTestCase(unittest.TestCase):
         # - The first line is the header line, with column names
         # - Next lines are all dataset examples
         dummy_mnli_header = '\t'.join(['dummyheader'] * 15)
-        dummy_mnli_body   = f'{MNLI_LINE_SAMPLE}\n' * 20
-        dummy_mnli_file   = f'{dummy_mnli_header}\n{dummy_mnli_body}'
+        dummy_mnli_body = f'{MNLI_LINE_SAMPLE}\n' * 20
+        dummy_mnli_file = f'{dummy_mnli_header}\n{dummy_mnli_body}'
 
         bert_tokenizer = Mock()
 
@@ -112,5 +112,3 @@ class DatasetsTestCase(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
