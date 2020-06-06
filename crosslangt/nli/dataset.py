@@ -56,10 +56,11 @@ class NLIDataset(Dataset):
         Returns an example indexed by idx.
 
         The returned value is a dictionary with the following:
+        pair_id: the original pairID from MNLI dataset
         input_ids: the sentence pair encoded with the tokenizer.
         attention_mask: the attention mask for the encoded input.
         token_type_ids: the token types for the input sequence.
-        label_idx: the label index for the example (based on init labels)
+        label: the label index for the example (based on init labels)
         """
         example = self.examples[idx]
 
@@ -72,6 +73,7 @@ class NLIDataset(Dataset):
         labels_idx = self.labels.index(example.label)
 
         return {
+            'pair_id': example.pair_id,
             'input_ids': tokenized['input_ids'],
             'attention_mask': tokenized['attention_mask'],
             'token_type_ids': tokenized['token_type_ids'],
