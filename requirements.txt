@@ -1,4 +1,6 @@
 lxml
+requests
 torch
+tqdm
 pytorch_lightning
 transformers

@@ -4,9 +4,9 @@ PIP:=pip
 SRC_PATH:=./crosslangt
 
 
-.PHONY=develop deps test lint
+.PHONY=dev deps test lint
 
-develop: deps
+dev: deps
 	$(PY) setup.py develop
 
 deps:
