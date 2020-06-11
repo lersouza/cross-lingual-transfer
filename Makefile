@@ -2,7 +2,7 @@ PY:=python
 PIP:=pip
 
 SRC_PATH:=./crosslangt
-
+TOOLS_PATH:=./tools
 
 .PHONY=dev deps test lint
 

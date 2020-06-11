@@ -22,4 +22,3 @@ def load_wiki_data(input_dir):
     into lists of sentences.
     """
     pass
-
