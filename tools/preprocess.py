@@ -1,17 +1,33 @@
 import argparse
 import json
 import logging
+import nltk
 import os
-import tqdm
+
+from tqdm import tqdm
 
 
 logger = logging.getLogger(__name__)
 
 
-def load_json_documents(file_path):
-    """ Loads a file as a set of json document objects. """
+def load_documents(file_path, sent_tokenizer: nltk.PunktSentenceTokenizer):
+    """ Loads a file as a set of documents, each represented as a list of lines. """
+    documents = []
     with open(os.path.join(file_path), encoding='utf-8') as f:
-        documents = [json.loads(doc) for doc in f.read().splitlines()]
+        for line in f.read().splitlines():
+            if line.startswith('<doc'):
+                documents.append([])
+            elif line == '</doc>': continue
+            elif not line.strip(): continue
+            elif line[:2] == '[[': continue
+            else:
+                if sent_tokenizer:
+                    line_sentences = sent_tokenizer.tokenize(line)
+                    documents[-1].extend(line_sentences)
+                else:
+                    print('not with tokenizer:', sent_tokenizer)
+                    documents[-1].append(line)
+
 
     return documents
 
@@ -50,22 +66,6 @@ def find_files_to_process(input_path):
     return all_files
 
 
-def load_raw_documents(file, min_sentence_length):
-    """
-    Load all documents extracted by WikiExtractor tool in a file (file).
-
-    Assumes that documents are JSON formatted (with --json flag).
-    More info: https://github.com/attardi/wikiextractor
-
-    Returns all documents in file, as a list of sentences in the doc.
-    """
-    documents_in_file = load_json_documents(file)
-    parsed_documents = [
-        parse_raw_document(d, min_sentence_length) for d in documents_in_file]
-
-    return parsed_documents
-
-
 def write_pre_processed(target_dir, source_file, documents):
     """
     Writes parsed documents to a target file, one sentence per line,
@@ -91,7 +91,7 @@ def write_pre_processed(target_dir, source_file, documents):
 
 
 def process_data(input_path, output_path,
-                 min_sentence_length):
+                 min_sentence_length, split_sentence_lang):
     """
     Pre Process documents and their sentences from WikiExtractor files.
     The result is, then, saved to output_path.
@@ -109,10 +109,19 @@ def process_data(input_path, output_path,
     files_to_process = find_files_to_process(input_path)
     logger.info(f'{len(files_to_process)} files found to be processed.')
 
-    for file in tqdm.tqdm(files_to_process):
-        logger.debug(f'Processing file {file}')
+    sent_tokenizer = None
 
-        documents = load_raw_documents(file, min_sentence_length)
+    if split_sentence_lang:
+        nltk.download('punkt')
+        sent_tokenizer = nltk.data.load(
+            f'tokenizers/punkt/{split_sentence_lang}.pickle')
+
+    progress_bar = tqdm(files_to_process)
+
+    for file in progress_bar:
+        progress_bar.set_description(file)
+
+        documents = load_documents(file, sent_tokenizer)
         write_pre_processed(output_path, file, documents)
 
 
@@ -136,6 +145,12 @@ def main():
                         help='minimum size of a sentence to keep it. '
                              'Default=0')
 
+    parser.add_argument('--split_sentence_lang',
+                        type=str, default=None,
+                        metavar='LANG',
+                        help='if provided, uses nltk Pukt tokenizer'
+                             'indicated in file "tokenizers/punkt/<LANG>.pickle')
+
     parser.add_argument('--debug',
                         action='store_true',
                         help='enabled debug logging.')
@@ -144,7 +159,8 @@ def main():
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
 
-    process_data(args.input_path, args.output_path, args.min_length)
+    process_data(args.input_path, args.output_path, args.min_length,
+                 args.split_sentence_lang)
 
 
 if __name__ == '__main__':
