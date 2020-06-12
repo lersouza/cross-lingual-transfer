@@ -1,0 +1,4 @@
+[submodule "external/wikiextractor"]
+	path = external/wikiextractor
+	url = git@github.com:attardi/wikiextractor.git
+	branch = master
