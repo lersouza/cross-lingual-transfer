@@ -1,3 +1,0 @@
-[submodule "tools/wikiextractor"]
-	path = tools/wikiextractor
-	url = git@github.com:attardi/wikiextractor.git
