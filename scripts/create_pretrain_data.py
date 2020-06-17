@@ -1,3 +1,4 @@
+import argparse
 import logging
 
 from functools import partial
@@ -9,24 +10,8 @@ from transformers import BertTokenizerFast, BertTokenizer
 
 from typing import List
 
+
 logger = logging.getLogger(__name__)
-
-
-class PreTrainDataset(Dataset):
-    def __init__(self, examples: List[int],
-                 tokenizer: BertTokenizer):
-        self.examples = examples
-        self.tokenizer = tokenizer
-
-    def __len__(self):
-        return len(self.examples)
-
-    def __getitem__(self, idx):
-        if isinstance(idx, slice):
-            return PreTrainDataset(self.examples[idx], self.tokenizer)
-
-        example = self.examples[idx]
-        return example
 
 
 def parse_document(sentences: List[str], tokenizer: BertTokenizer,
@@ -39,8 +24,8 @@ def parse_document(sentences: List[str], tokenizer: BertTokenizer,
     # First we flatten and tokenize the items
     all_tokens = [
         token for sentence in sentences
-              for token in tokenizer.encode(sentence,
-                                            add_special_tokens=False)]
+              for token in tokenizer.encode(
+                  sentence, add_special_tokens=False)]
 
     # Then, we split in chunks based on max_seq_length, ignoring
     # Special tokens [CLS] and [SEP]
@@ -104,8 +89,28 @@ def from_datasetfiles(input_path, output_directory, tokenizer_name_or_path,
             pickle.dump(examples, out_ds)
 
 
+def main():
+    parser = argparse.ArgumentParser(description='Generate dataset examples '
+                                     'from pre processed Wiki files '
+                                     '(see preprocess.py).')
+
+    parser.add_argument('input_dir', type=str,
+                        help='the input directory with pre processed files')
+
+    parser.add_argument('output_dir', type=str,
+                        help='the directory where to store dataset files')
+
+    parser.add_argument('--max_seq_length', metavar='n',
+                        type=int, default=256,
+                        help='the maximun length of a input sequence '
+                             '(default=256)')
+
+    parser.add_argument('--max_samples_per_file', metavar='n',
+                        type=int, default=10000,
+                        help='the maximum samples per file (default=10k)')
+
+    args = parser.parse_args()
+
+
 if __name__ == '__main__':
-    from_datasetfiles('output/dataset/pt/processed',
-                      'output/dataset/pt',
-                      'output/tokenizer/bert-base-cased-pt',
-                      max_seq_length=256)
+    main()
