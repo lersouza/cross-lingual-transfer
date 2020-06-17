@@ -19,8 +19,7 @@ for line in sys.stdin:
     if not line:
         print("")  # Preserve doc separation
     else:
-        sentences = nltk.sent_tokenize(line, nltk_language) 
+        sentences = nltk.sent_tokenize(line, nltk_language)
 
         for sentence in sentences:
             print(sentence)
-

@@ -43,10 +43,10 @@ class NLIDataset(Dataset):
                  examples: List[NLIExample],
                  tokenizer: PreTrainedTokenizer,
                  max_seq_length: int = 512,
-                 labels: List[str] = DEFAULT_LABELS):
+                 labels: List[str] = None):
         self.examples = examples
         self.tokenizer = tokenizer
-        self.labels = labels
+        self.labels = labels or LABEL_SCHEMES['mnli']
 
         self.max_seq_length = max_seq_length
 
@@ -107,7 +107,7 @@ def load_mnli_dataset(root_path: str, file_name: str,
     full_path = os.path.join(root_path, file_name)
 
     if not os.path.exists(full_path):
-        raise ValueError(fine-tuning f'The file {full_path} does not exist.')
+        raise ValueError(f'The file {full_path} does not exist.')
 
     examples = []
 

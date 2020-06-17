@@ -8,7 +8,7 @@ from unittest.mock import (
 )
 
 from crosslangt.nli.dataset import (
-    DEFAULT_LABELS,
+    LABEL_SCHEMES,
     NLIDataset,
     NLIExample,
     load_mnli_dataset,
@@ -92,7 +92,7 @@ class DatasetsTestCase(unittest.TestCase):
         is_true(all(sample['input_ids'] == encoded['input_ids']))
         is_true(all(sample['attention_mask'] == encoded['attention_mask']))
         is_true(all(sample['token_type_ids'] == encoded['token_type_ids']))
-        is_true(sample['label'] == DEFAULT_LABELS.index('neutral'))
+        is_true(sample['label'] == LABEL_SCHEMES['mnli'].index('neutral'))
 
     def __build_demo_dataset(self, tokenizer=None, max_seq_length=15):
         examples = [
