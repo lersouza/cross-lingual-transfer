@@ -11,6 +11,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PreTrainInstace():
+    """
+    Represents and example (instance) for Pre training BERT.
+    This examples consists of:
+
+    - sentence_pair: A list of tokens representing a sentence pair.
+                     Start token is always [CLS] and end token is [SEP].
+                     The sentences are divided by an additional [SEP] token.
+
+                     Example:
+                     - '[CLS]', 'sent1', '[SEP]', 'sent2', '[SEP]'
+
+    - segment_ids:   A list of size len(sentence_pair) with 0 to represent
+                     the tokens of first sentence and 1 for the second.
+
+    - is_next:       A flag indicating whether or not the second sentence
+                     actual follows the first one. Used for NSP task.
+    """
     sentence_pair: List[str]
     segment_ids: List[int]
     is_next: bool
@@ -18,13 +35,23 @@ class PreTrainInstace():
 
 def create_training_intances(documents, max_seq_length,
                              tokenizer: BertWordPieceTokenizer):
+    """
+    Creates Pre-training instances for the provided `documents`.
+    This implementation is based on BERT's public code.
+
+    Input parameters are:
+    - documents: A list of documents. Each document is a list
+                 of sentences and each sentence is a list of
+                 WordPiece tokens.
+
+    """
     logger.info(f'About to create instances for {len(documents)} docs.')
 
     instances = []
 
     for i, document in enumerate(documents):
         instances.extend(create_from_document(
-            i, document, documents, max_seq_length, tokenizer))
+            i, document, documents, max_seq_length))
 
         logger.debug(f'Created {len(instances)} from document {i}')
 
@@ -34,9 +61,7 @@ def create_training_intances(documents, max_seq_length,
     return instances
 
 
-def create_from_document(doc_idx, doc, all_docs,
-                         max_seq_length,
-                         tokenizer: BertWordPieceTokenizer):
+def create_from_document(doc_idx, doc, all_docs, max_seq_length):
     """
     I heavily rely on the implementation of BERT to generate training data:
     github.com/google-research/bert/blob/master/create_pretraining_data.py
@@ -45,6 +70,9 @@ def create_from_document(doc_idx, doc, all_docs,
     - I do not keep short sentences with any probability
     - The masking of tokens will be done dynamically, during training
       (just like the experiment made in RoBERTa paper)
+
+    This function also assumes that all documents are tokenized
+    (WordPiece Token Strings).
     """
     instances = []
 
@@ -68,50 +96,65 @@ def create_from_document(doc_idx, doc, all_docs,
         current_length += len(segment)
 
         if i == len(doc) - 1 or current_length >= target_seq_length:
-            sentence_a_end = randrange(max(1, len(current_chunk) - 1))
+            if current_chunk:
+                sentence_a = []
+                sentence_b = []
 
-            sentence_a = current_chunk[0:sentence_a_end]
-            sentence_b = []
+                sentence_a_end = randint(1, max(1, len(current_chunk) - 1))
 
-            is_next = True
-            sentence_b_tgt_len = target_seq_length - len(sentence_a)
+                for ai in range(sentence_a_end):
+                    sentence_a.extend(current_chunk[ai])
 
-            if random() < 0.5:
-                # Let's get a random sentence
-                is_next = False
-                random_doc_idx = randint(0, len(all_docs) - 1)
+                is_next = True
+                sentence_b_tgt_len = target_seq_length - len(sentence_a)
 
-                if random_doc_idx == doc_idx:
-                    random_doc -= 1
+                chance = random()
 
-                random_doc = all_docs[random_doc_idx]
-                random_start = randint(0, len(random_doc) - 1)
+                if len(all_docs) > 1 and \
+                   (len(current_chunk) == 1 or chance < 0.5):
 
-                for j in range(random_start, len(random_doc)):
-                    sentence_b.extend(random_doc[j])
+                    # Let's get a random sentence
+                    is_next = False
+                    random_doc_idx = randint(0, len(all_docs) - 1)
 
-                    if len(sentence_b) >= sentence_b_tgt_len:
-                        break
+                    if random_doc_idx == doc_idx:
+                        random_doc_idx -= 1
 
-                # We free the tokens we'll not use for this instance
-                i -= len(current_chunk) - sentence_a_end
-            else:
-                # It will be an actual next sentence
-                for j in range(sentence_a_end, len(current_chunk)):
-                    sentence_b.extend(current_chunk[j])
+                    random_doc = all_docs[random_doc_idx]
+                    random_start = randint(0, len(random_doc) - 1)
 
-            truncate_seq_pair(sentence_a, sentence_b, target_seq_length)
+                    for j in range(random_start, len(random_doc)):
+                        sentence_b.extend(random_doc[j])
 
-            final_seq = ['[CLS]'] + \
-                sentence_a + \
-                ['[SEP]'] + \
-                sentence_b + \
-                ['[SEP]']
+                        if len(sentence_b) >= sentence_b_tgt_len:
+                            break
 
-            segment_ids = [0] * (len(sentence_a) + 2)
-            segment_ids += [1] * (len(sentence_b) + 1)
+                    # We free the tokens we'll not use for this instance
+                    i -= len(current_chunk) - sentence_a_end
+                else:
+                    # It will be an actual next sentence
+                    for j in range(sentence_a_end, len(current_chunk)):
+                        sentence_b.extend(current_chunk[j])
 
-            instances.append(PreTrainInstace(final_seq, segment_ids, is_next))
+                truncate_seq_pair(sentence_a, sentence_b, target_seq_length)
+
+                assert len(sentence_a) >= 1
+                assert len(sentence_b) >= 1
+
+                final_seq = ['[CLS]'] + \
+                    sentence_a + \
+                    ['[SEP]'] + \
+                    sentence_b + \
+                    ['[SEP]']
+
+                segment_ids = [0] * (len(sentence_a) + 2)
+                segment_ids += [1] * (len(sentence_b) + 1)
+
+                instances.append(
+                    PreTrainInstace(
+                        sentence_pair=final_seq,
+                        segment_ids=segment_ids,
+                        is_next=is_next))
 
             current_chunk = []
             current_length = 0
