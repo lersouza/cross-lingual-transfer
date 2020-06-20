@@ -1,6 +1,8 @@
 # Ignore output folders
 #
 output/
+data/
+lightning_logs/
 
 # Byte-compiled / optimized / DLL files
 #

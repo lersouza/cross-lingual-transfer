@@ -1,6 +1,9 @@
+h5py
 lxml
 nltk
+numpy
 requests
+sklearn
 torch
 tqdm
 pytorch_lightning

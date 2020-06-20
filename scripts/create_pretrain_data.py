@@ -1,115 +1,77 @@
 import argparse
-import logging
+import os
 
-from functools import partial
-from multiprocessing import Pool, cpu_count
-from pathlib import Path
-from torch.utils.data import Dataset
 from tqdm import tqdm
-from transformers import BertTokenizerFast, BertTokenizer
 
-from typing import List
-
-
-logger = logging.getLogger(__name__)
+from crosslangt.pretrain.dataset import create_training_intances
+from pytorch_lightning import seed_everything
+from tokenizers import BertWordPieceTokenizer
 
 
-def parse_document(sentences: List[str], tokenizer: BertTokenizer,
-                   max_seq_length=256):
+def generate_examples_from_file(file, vocab, output, max_seq_length):
     """
-    Given a list of sentences in a document,
-    generate examples for pre-training, all tokenized.
+    Generate training examples from an specific file.
     """
+    documents = [[]]
+    tokenizer = BertWordPieceTokenizer(vocab, lowercase=False,
+                                       strip_accents=False)
 
-    # First we flatten and tokenize the items
-    all_tokens = [
-        token for sentence in sentences
-              for token in tokenizer.encode(
-                  sentence, add_special_tokens=False)]
+    all_lines = file.readlines()
 
-    # Then, we split in chunks based on max_seq_length, ignoring
-    # Special tokens [CLS] and [SEP]
-    target_seq_len = max_seq_length - 2
+    for line in tqdm(all_lines, f'loading {file.name}'):
+        line = line.strip()
 
-    chunks = [
-        [tokenizer.cls_token_id] +
-        all_tokens[start:start+target_seq_len] +
-        [tokenizer.sep_token_id]
-        for start in range(0, len(all_tokens), target_seq_len)]
+        if not line:  # End of document
+            documents.append([])  # Prepare for the next doc
+            continue
 
-    return chunks
+        # Tokenize line (sentence) and append to document
+        encoded = tokenizer.encode(line, add_special_tokens=False)
 
+        if encoded and encoded.tokens:
+            documents[-1].append(encoded.tokens)
 
-def parse_file(file: str, max_seq_length: int, tokenizer: BertTokenizer):
-    sentences = []
-    examples = []
+    output_path = os.path.join(output, f'{file.name}.examples')
 
-    with open(file, 'r', encoding='utf-8') as in_file:
-        line = in_file.readline()
-
-        while line:
-            line = line.strip()
-
-            if not line:  # end of document
-                examples.extend(
-                    parse_document(
-                        sentences, tokenizer, max_seq_length))
-
-                sentences = []
-            else:
-                sentences.append(line)
-
-            line = in_file.readline()
-
-    return examples
+    create_training_intances(
+        documents, max_seq_length, output_path, tokenizer,
+        tqdm_desc=f'creating instances for {file.name}')
 
 
-def from_datasetfiles(input_path, output_directory, tokenizer_name_or_path,
-                      max_seq_length=512, max_examples=None):
+def generate_examples(input_files, vocab, output, max_seq_length,
+                      random_seed):
     """
+    Generate training examples based on the `input_files`.
     """
-    import os
-    import random
-    import pickle
+    seed_everything(random_seed)  # Make it reproducible
 
-    input_files = [str(f) for f in Path(input_path).glob('**/*')]
-    
-    # Using BERTTokenizerFast, which is a wrapper around a Rust
-    # implementation, for handling performance issues due to large
-    # dataset.
-    tokenizer = BertTokenizerFast.from_pretrained(tokenizer_name_or_path)
-
-    logger.info(f'About to process {len(input_files)} dataset files.')
-
-    for i, file in enumerate(tqdm(input_files)):
-        examples = parse_file(file, max_seq_length, tokenizer)
-        random.shuffle(examples)
-
-        with open(os.path.join(output_directory, f'dataset_{i}.pkl'), 'wb+') as out_ds:
-            pickle.dump(examples, out_ds)
+    for file in input_files:
+        with file:
+            generate_examples_from_file(file, vocab, output, max_seq_length)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate dataset examples '
-                                     'from pre processed Wiki files '
-                                     '(see preprocess.py).')
+    parser = argparse.ArgumentParser()
 
-    parser.add_argument('input_dir', type=str,
-                        help='the input directory with pre processed files')
+    parser.add_argument('input_files', type=argparse.FileType('r'), nargs='+',
+                        help='Dataset files used to generate exampĺes.')
 
-    parser.add_argument('output_dir', type=str,
-                        help='the directory where to store dataset files')
+    parser.add_argument('--max_seq_length', type=int, default=512,
+                        help='Max Sequence Length for BERT input_ids. '
+                             'Default=512')
 
-    parser.add_argument('--max_seq_length', metavar='n',
-                        type=int, default=256,
-                        help='the maximun length of a input sequence '
-                             '(default=256)')
+    parser.add_argument('-o', '--output', type=str, default='./',
+                        help='Output directory to store examples')
 
-    parser.add_argument('--max_samples_per_file', metavar='n',
-                        type=int, default=10000,
-                        help='the maximum samples per file (default=10k)')
+    parser.add_argument('--vocab', type=str, default='vocab.txt',
+                        help='The vocab file to tokenize input files.')
+
+    parser.add_argument('--random_seed', type=int, default=54321,
+                        help='A random seed to be able to reproduce results.')
 
     args = parser.parse_args()
+
+    generate_examples(**vars(args))
 
 
 if __name__ == '__main__':

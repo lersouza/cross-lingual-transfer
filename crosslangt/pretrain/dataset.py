@@ -1,8 +1,12 @@
+import collections
+import h5py
 import logging
+import numpy as np
 
 from dataclasses import dataclass
-from random import random, randrange, randint
+from random import random, randint, shuffle
 from tokenizers import BertWordPieceTokenizer
+from tqdm import tqdm
 from typing import List
 
 
@@ -33,8 +37,10 @@ class PreTrainInstace():
     is_next: bool
 
 
-def create_training_intances(documents, max_seq_length,
-                             tokenizer: BertWordPieceTokenizer):
+def create_training_intances(documents, max_seq_length, output_path,
+                             tokenizer: BertWordPieceTokenizer,
+                             use_tqdm=True,
+                             tqdm_desc='processing documents'):
     """
     Creates Pre-training instances for the provided `documents`.
     This implementation is based on BERT's public code.
@@ -49,16 +55,56 @@ def create_training_intances(documents, max_seq_length,
 
     instances = []
 
-    for i, document in enumerate(documents):
+    # Make sure we don't have empty docs
+    all_documents_ = [d for d in documents if d]
+    all_docs_iterable_ = all_documents_  # Hack for optional tqdm
+
+    # Do some shuffle, just to make sure the dataset will vary
+    shuffle(all_documents_)
+
+    if use_tqdm is True:
+        all_docs_iterable_ = tqdm(all_documents_, desc=tqdm_desc)
+
+    for i, document in enumerate(all_docs_iterable_):
         instances.extend(create_from_document(
-            i, document, documents, max_seq_length))
+            i, document, all_documents_, max_seq_length))
 
-        logger.debug(f'Created {len(instances)} from document {i}')
-
+    logger.debug(f'Created {len(instances)} from document {i}')
     logger.info(f'Generated {len(instances)} instances'
                 f'for {len(documents)} docs.')
 
-    return instances
+    shuffle(instances)  # Shuffle for non-sequential doc sentences
+
+    write_instances_to_file(
+        instances, max_seq_length, output_path, tokenizer)
+
+
+def write_instances_to_file(
+    instances: List[PreTrainInstace], max_seq_length: int, output_path: str,
+        tokenizer: BertWordPieceTokenizer):
+
+    enc = tokenizer.encode_tokenized
+
+    with h5py.File(output_path, mode='w') as sfile:
+        inputs_ds = sfile.create_dataset(
+            'input', shape=(len(instances), 2, max_seq_length), dtype='i')
+
+        labels_ds = sfile.create_dataset(
+            'labels', shape=(len(instances), 1), dtype='i')
+
+        for i, instance in enumerate(tqdm(instances, 'saving instances')):
+            seq_size = len(instance.sentence_pair)
+
+            input_ids = np.zeros(max_seq_length)
+            segment_ids = np.zeros(max_seq_length)
+
+            input_ids[0: seq_size] = enc(instance.sentence_pair).ids
+            segment_ids[0: seq_size] = instance.segment_ids
+            label = 1 if instance.is_next else 0
+
+            inputs_ds[i, 0, :] = input_ids
+            inputs_ds[i, 1, :] = segment_ids
+            labels_ds[i, 0] = label
 
 
 def create_from_document(doc_idx, doc, all_docs, max_seq_length):
@@ -106,22 +152,27 @@ def create_from_document(doc_idx, doc, all_docs, max_seq_length):
                     sentence_a.extend(current_chunk[ai])
 
                 is_next = True
-                sentence_b_tgt_len = target_seq_length - len(sentence_a)
-
                 chance = random()
 
                 if len(all_docs) > 1 and \
                    (len(current_chunk) == 1 or chance < 0.5):
 
+                    sentence_b_tgt_len = target_seq_length - len(sentence_a)
+
                     # Let's get a random sentence
                     is_next = False
-                    random_doc_idx = randint(0, len(all_docs) - 1)
 
-                    if random_doc_idx == doc_idx:
-                        random_doc_idx -= 1
+                    for _ in range(10):
+                        random_doc_idx = randint(0, len(all_docs) - 1)
 
+                        if random_doc_idx != doc_idx:
+                            break
+
+                    # We select the document and a random position to start
+                    # We use len(random_doc) // 2 to make room for a bugger
+                    # sentence
                     random_doc = all_docs[random_doc_idx]
-                    random_start = randint(0, len(random_doc) - 1)
+                    random_start = randint(0, len(random_doc) // 2)
 
                     for j in range(random_start, len(random_doc)):
                         sentence_b.extend(random_doc[j])
