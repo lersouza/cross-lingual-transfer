@@ -44,7 +44,8 @@ class BERTFineTuneModel(LightningModule):
         """
         pass
 
-    def _build_dataloader(self, dataset, shuffle: bool = False, collate_fn = None):
+    def _build_dataloader(self, dataset, shuffle: bool = False,
+                          collate_fn=None):
         """
         Builds a dataloader for given `dataset` using experiment hyper params.
         """

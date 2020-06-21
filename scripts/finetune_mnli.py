@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 
 from crosslangt.nli.model import BERTNLIFineTuneModel
 from transformers import BertForSequenceClassification
@@ -7,8 +8,10 @@ from tokenizers import BertWordPieceTokenizer
 
 from pytorch_lightning import (
     seed_everything,
-    Trainer
+    Trainer,
 )
+
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 
 logger = logging.getLogger('finetune_mnli')
@@ -31,9 +34,19 @@ def finetune(hyperparameters):
     # Make it reproducible.
     seed_everything(hyperparameters.seed)
 
+    # Checkpoints
+    checkpoint_file_fmt = os.path.join(
+        hyperparameters.checkpoint_path,
+        '{epoch}-{avg_val_acc:.4f}')
+
+    model_checkpoint = ModelCheckpoint(checkpoint_file_fmt,
+                                       save_weights_only=True,
+                                       save_top_k=-1)
+
     model = BERTNLIFineTuneModel(hyperparameters)
-    trainer = Trainer.from_argparse_args(hyperparameters)
-    
+    trainer = Trainer.from_argparse_args(hyperparameters,
+                                         checkpoint_callback=model_checkpoint)
+
     if hyperparameters.train is True:
         logger.info('About to finte tune model.')
         trainer.fit(model)
@@ -51,6 +64,8 @@ def main():
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--seed', type=int, default=54321)
+    parser.add_argument('--checkpoint_path', type=str,
+                        default='data/checkpoints')
 
     parser = BERTNLIFineTuneModel.add_model_specific_args(parser)
     parser = Trainer.add_argparse_args(parser)

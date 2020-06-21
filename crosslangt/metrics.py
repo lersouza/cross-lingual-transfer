@@ -15,5 +15,3 @@ def compute_accuracy(logits: Tensor, y: Tensor) -> Tensor:
     accuracy = accuracy_score(predicted.cpu(), y.cpu())
 
     return torch.tensor(accuracy)
-
-

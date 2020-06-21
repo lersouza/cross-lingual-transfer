@@ -1,4 +1,5 @@
 import logging
+import os
 import torch
 
 from argparse import ArgumentParser
@@ -16,9 +17,6 @@ from transformers.data.datasets import (
     GlueDataset,
     GlueDataTrainingArguments,
 )
-
-
-logger = logging.getLogger(__name__)
 
 
 class BERTNLIFineTuneModel(basemodel.BERTFineTuneModel):
@@ -43,9 +41,7 @@ class BERTNLIFineTuneModel(basemodel.BERTFineTuneModel):
         """
         Run the model.
         """
-        shapes = (input_ids.shape, attention_mask.shape,
-                  token_type_ids.shape, labels.shape)
-
+        shapes = (input_ids.shape, attention_mask.shape, token_type_ids.shape)
         self.log.debug(f'BERT-MNLI: input shapes are: {shapes}')
 
         bert_output = self.bert_model.forward(
@@ -82,30 +78,81 @@ class BERTNLIFineTuneModel(basemodel.BERTFineTuneModel):
         avg_val_acc = torch.stack([x['val_acc'] for x in outputs]).mean()
 
         bar = {'val_loss': avg_loss, 'avg_val_acc': avg_val_acc}
-        return {'val_loss': avg_loss, 'progress_bar': bar}
+        return {
+            'val_loss': avg_loss,
+            'avg_val_acc': avg_val_acc,
+            'progress_bar': bar}
 
-    def prepare_data(self):
-        """ Load the datasets to be used. """
-        training_args = GlueDataTrainingArguments(
-            task_name='mnli',
-            data_dir=self.hparams.data_dir)
+    def test_step(self, batch, batch_idx):
+        """ Executes a test step in the model. """
+        model_output = self(**batch)
 
-        limit_data_length = getattr(self.hparams, 'limit_data', None)
+        if 'labels' in batch:
+            _, logits = model_output
+            test_acc = compute_accuracy(logits, batch['labels'])
+            logs = {'test_acc': test_acc}
 
-        self.train_dataset = GlueDataset(
-            training_args, self.tokenizer, limit_data_length, 'train')
+            return {'test_acc': test_acc, 'log': logs}
+        else:
+            logits = model_output[0]
 
-        self.eval_dataset = GlueDataset(
-            training_args, self.tokenizer, limit_data_length, 'dev')
+            # For MNLI dataset, labels are not available
+            # in the test dataset. So, we need to generate a file
+            # for submiting to Open Kaggle Competition.
+            predictions = torch.argmax(logits, dim=-1)
+            return {'test_predictions': predictions}
 
-        self.test_dataset = GlueDataset(
-            training_args, self.tokenizer, limit_data_length, 'test')
+    def test_epoch_end(self, outputs):
+        """ Consolidate all outputs from mini-batches. """
+        if 'test_predictions' in outputs:
+            all_predictions = torch.stack(
+                [x['test_predictions'] for x in outputs])
+
+            output_file = os.path.join(
+                self.hparams.predicted_output_dir,
+                f'test-predictions-{self.current_epoch}.csv')
+
+            with open(output_file, 'w+') as file:
+                for i, prediction in all_predictions:
+                    file.write(i)
+                    file.write(',')
+                    file.write(
+                        self.test_dataset.get_labels()[prediction.detach()])
+                    file.write('\n')
+
+            return {'total_predictions': len(all_predictions)}
+        elif 'test_acc' in outputs:
+            avg_test_acc = torch.stack([x['test_acc'] for x in outputs]).mean()
+            return {'avg_test_acc': avg_test_acc}
+
+        return {}  # Just in case test has produced no outputs
 
     def train_dataloader(self):
-        return self._build_dataloader(self.train_dataset, True)
+        """ Returns a DataLoader for training the Model. """
+        dataset = self.train_dataset or self._build_dataset('train')
+        return self._build_dataloader(dataset, True)
 
     def val_dataloader(self):
-        return self._build_dataloader(self.eval_dataset)
+        """ Returns a DataLoader for validating the Model. """
+        dataset = self.eval_dataset or self._build_dataset('dev')
+        return self._build_dataloader(dataset)
+
+    def test_dataloader(self):
+        """ Returns a DataLoader for testing the Model. """
+        dataset = self.test_dataset or self._build_dataset('test')
+        return self._build_dataloader(dataset)
+
+    def _build_dataset(self, dataset_type):
+        """ Builds a GlueDataset for the specified `dataset_type`. """
+        data_args = GlueDataTrainingArguments(
+            task_name='mnli',
+            max_seq_length=self.hparams.max_seq_length,
+            data_dir=self.hparams.data_dir)
+
+        dataset = GlueDataset(
+            data_args, self.tokenizer, self.hparams.limit_data, dataset_type)
+
+        return dataset
 
     @staticmethod
     def add_model_specific_args(parent_parser: ArgumentParser):
@@ -115,6 +162,10 @@ class BERTNLIFineTuneModel(basemodel.BERTFineTuneModel):
         parser.add_argument('--data_dir', metavar='PATH',
                             type=str, default='data/mnli',
                             help='The dir where dataset files are located.')
+
+        parser.add_argument('--max_seq_length', metavar='S',
+                            type=int, default=128,
+                            help='Max seq length for inputs to the model.')
 
         parser.add_argument('--limit_data', metavar='N',
                             type=int, default=None,
