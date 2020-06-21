@@ -5,10 +5,6 @@ from crosslangt.nli.model import BERTNLIFineTuneModel
 from transformers import BertForSequenceClassification
 from tokenizers import BertWordPieceTokenizer
 
-from crosslangt.clt_argparser import (
-    CrossLingualTArgParser,
-    TrainingArguments
-)
 from pytorch_lightning import (
     seed_everything,
     Trainer
