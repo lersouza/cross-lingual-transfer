@@ -1,10 +1,9 @@
 import logging
 import torch
-import pytorch_lightning as pl
 
-from argparse import Namespace
-from crosslangt import tokenization
-from sklearn.metrics import accuracy_score
+from argparse import ArgumentParser
+from crosslangt import tokenization, basemodel
+from crosslangt.metrics import compute_accuracy
 from torch.utils.data import DataLoader
 from transformers.data.data_collator import DefaultDataCollator
 
@@ -22,46 +21,23 @@ from transformers.data.datasets import (
 logger = logging.getLogger(__name__)
 
 
-class BERTNLIFineTuneModel(pl.LightningModule):
+class BERTNLIFineTuneModel(basemodel.BERTFineTuneModel):
     """
     A model for finetuning BERT in NLI tasks.
     """
-    def __init__(self, hparams: Namespace):
-        super().__init__()
+    def __init__(self, hparams):
+        super().__init__(hparams)
 
-        self.hparams = hparams
-
-        # Modules
+    def _build_bert_model(self):
         bert_config = BertConfig.from_pretrained(
-            hparams.model,
-            num_labels=hparams.num_labels,
+            self.hparams.model,
+            num_labels=3,
             output_hidden_states=False,
             output_attentions=False,
             finetuning_task='mnli')
 
         self.bert_model = BertForSequenceClassification.from_pretrained(
-            hparams.model, config=bert_config)
-
-        if hparams.freeze_lexical:
-            self.freeze_lexical()
-
-        self.tokenizer = tokenization.get_tokenizer(
-            self.hparams.model, self.hparams.vocab, type='transformers')
-
-        # Datasets
-        self.train_dataset = None
-        self.eval_dataset = None
-        self.test_dataset = None
-
-    def freeze_lexical(self):
-        """ Freezes the lexical part of Bert Model. """
-        logger.info('BERT-MNLI: Freezing BERT model lexical. '
-                    'All Input Embeddings will not be updated.')
-
-        embeddings = self.bert_model.get_input_embeddings()
-
-        for parameter in embeddings.parameters():
-            parameter.requires_grad = False
+            self.hparams.model, config=bert_config)
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
         """
@@ -70,7 +46,7 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         shapes = (input_ids.shape, attention_mask.shape,
                   token_type_ids.shape, labels.shape)
 
-        logger.debug(f'BERT-MNLI: input shapes are: {shapes}')
+        self.log.debug(f'BERT-MNLI: input shapes are: {shapes}')
 
         bert_output = self.bert_model.forward(
             input_ids=input_ids,
@@ -79,31 +55,6 @@ class BERTNLIFineTuneModel(pl.LightningModule):
             labels=labels)
 
         return bert_output
-
-    def configure_optimizers(self):
-        """
-        Configure the optimizer.
-        For this experiment, we always use Adam without decay.
-        """
-        lr = self.hparams.lr
-        params = list(self.parameters())
-
-        logger.info(f'Using Adam Optimizer for {len(params)} parameters '
-                    f'with learning rate={lr}.')
-
-        return torch.optim.Adam(params, lr=lr)
-
-    def calculate_accuracy(self, logits, y):
-        """
-        Calculates accuracy obtained from logits,
-        based on actual `y` labels.
-        """
-        # Logits shape should be (B, C), where B is Batch Size
-        # and C is the number of classes the model outputs.
-        predicted = torch.argmax(logits, dim=1)
-        accuracy = accuracy_score(predicted.cpu(), y.cpu())
-
-        return torch.tensor(accuracy)
 
     def training_step(self, batch, batch_idx):
         """ Runs a training step for the specified (mini-)batch. """
@@ -120,7 +71,7 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         """ Runs a validation step for this mode. """
         loss, logits = self(**batch)
 
-        val_acc = self.calculate_accuracy(logits, batch['labels'])
+        val_acc = compute_accuracy(logits, batch['labels'])
         logs = {'val_loss': loss, 'val_acc': val_acc}
 
         return {'val_loss': loss, 'val_acc': val_acc, 'log': logs}
@@ -147,24 +98,26 @@ class BERTNLIFineTuneModel(pl.LightningModule):
         self.eval_dataset = GlueDataset(
             training_args, self.tokenizer, limit_data_length, 'dev')
 
-        if self.hparams.do_test:
-            self.test_dataset = GlueDataset(
-                training_args, self.tokenizer, limit_data_length, 'test')
+        self.test_dataset = GlueDataset(
+            training_args, self.tokenizer, limit_data_length, 'test')
 
     def train_dataloader(self):
-        return self.__build_dataloader(self.train_dataset, True)
+        return self._build_dataloader(self.train_dataset, True)
 
     def val_dataloader(self):
-        return self.__build_dataloader(self.eval_dataset)
+        return self._build_dataloader(self.eval_dataset)
 
-    def __build_dataloader(self, dataset: GlueDataset, shuffle: bool = False):
-        """
-        Builds a dataloader for given `dataset` using experiment hyper params.
-        """
-        collator = DefaultDataCollator()
+    @staticmethod
+    def add_model_specific_args(parent_parser: ArgumentParser):
+        parser = basemodel.BERTFineTuneModel.add_model_specific_args(
+            parent_parser)
 
-        loader = DataLoader(dataset, shuffle=shuffle,
-                            batch_size=self.hparams.batch_size,
-                            collate_fn=collator.collate_batch)
+        parser.add_argument('--data_dir', metavar='PATH',
+                            type=str, default='data/mnli',
+                            help='The dir where dataset files are located.')
 
-        return loader
+        parser.add_argument('--limit_data', metavar='N',
+                            type=int, default=None,
+                            help='The maximum examples to use from dataset.')
+
+        return parser

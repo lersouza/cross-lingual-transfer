@@ -5,55 +5,59 @@ from crosslangt.nli.model import BERTNLIFineTuneModel
 from transformers import BertForSequenceClassification
 from tokenizers import BertWordPieceTokenizer
 
+from crosslangt.clt_argparser import (
+    CrossLingualTArgParser,
+    TrainingArguments
+)
 from pytorch_lightning import (
     seed_everything,
-    Trainer)
+    Trainer
+)
+
+
+logger = logging.getLogger('finetune_mnli')
 
 
 def finetune(hyperparameters):
+    log_level = logging.WARN
+
+    if hyperparameters.debug:
+        log_level = logging.DEBUG
+    elif hyperparameters.verbose:
+        log_level = logging.INFO
+
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO,
+        level=log_level,
     )
 
+    # Make it reproducible.
     seed_everything(hyperparameters.seed)
 
     model = BERTNLIFineTuneModel(hyperparameters)
-    trainer = Trainer(fast_dev_run=True)
-    trainer.fit(model)
+    trainer = Trainer.from_argparse_args(hyperparameters)
+    
+    if hyperparameters.train is True:
+        logger.info('About to finte tune model.')
+        trainer.fit(model)
+
+    if hyperparameters.test is True:
+        logger.info('About to test model.')
+        trainer.test(model)
 
 
 def main():
-    parser = argparse.ArgumentParser('Fine tune BERT to MNLI Dataset')
+    parser = argparse.ArgumentParser()
 
-    parser.add_argument('--model', type=str, default='bert-base-cased',
-                        help='The name of the model to finetune. '
-                             'Default=bert-base-cased')
+    parser.add_argument('--train', action='store_true')
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--seed', type=int, default=54321)
 
-    parser.add_argument('--vocab', type=str, default=None,
-                        help='The vocab file to use. Default=vocab.txt')
-
-    parser.add_argument('--freeze_lexical', action='store_true',
-                        help='Indicate whether to freeze the model lexical.')
-
-    parser.add_argument('--num_labels', type=int, default=3,
-                        help='Number of classes to output. Default = 3')
-
-    parser.add_argument('--data_dir', type=str, default='data/mnli/',
-                        help='The directory where dataset files are located.')
-
-    parser.add_argument('--do_test', action='store_true',
-                        help='Indicate whether a test should be performed.')
-
-    parser.add_argument('--seed', type=int, default=54321,
-                        help='The random seed for the experiment.')
-
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='Batch size for running the model, per gpu.')
-
-    parser.add_argument('--lr', type=float, default=1e-4,
-                        help='Learning rate to use in fine tuning.')
+    parser = BERTNLIFineTuneModel.add_model_specific_args(parser)
+    parser = Trainer.add_argparse_args(parser)
 
     params = parser.parse_args()
 
