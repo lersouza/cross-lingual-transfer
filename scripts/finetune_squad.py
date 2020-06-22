@@ -33,6 +33,7 @@ import timeit
 
 import numpy as np
 import torch
+from crosslangt.lexical import freeze_lexical, load_pretrained_lexical
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
@@ -72,31 +73,6 @@ def set_seed(args):
 
 def to_list(tensor):
     return tensor.detach().cpu().tolist()
-
-
-def freeze_lexical(model):
-    """ Freezes the lexical part of Bert Model. """
-    logger.info('BERT-MNLI: Freezing BERT model lexical. '
-                'All Input Embeddings will not be updated.')
-
-    embeddings = model.get_input_embeddings()
-
-    for parameter in embeddings.parameters():
-        parameter.requires_grad = False
-
-
-def load_pretrained_lexical(model, lexical):
-    """ Loads a pre-trained lexical layer specified in lexical. """
-    lexical_state = torch.load(lexical)
-    weights = lexical_state['weight']
-
-    embeddings = torch.nn.Embedding(
-        weights.shape[0], weights.shape[1],
-        padding_idx=0)
-
-    embeddings.load_state_dict(weights)
-
-    model.set_input_embeddings(embeddings)
 
 
 def train(args, train_dataset, model, tokenizer):

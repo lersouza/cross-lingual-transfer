@@ -3,8 +3,6 @@ lxml
 nltk
 numpy
 requests
-sklearn
 torch
 tqdm
-pytorch_lightning>=0.8.1
 transformers
