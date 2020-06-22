@@ -3,6 +3,7 @@
 output/
 data/
 lightning_logs/
+runs/
 
 # Byte-compiled / optimized / DLL files
 #
