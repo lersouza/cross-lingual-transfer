@@ -33,11 +33,15 @@ import timeit
 
 import numpy as np
 import torch
-from crosslangt.lexical import freeze_lexical, load_pretrained_lexical
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
+from crosslangt.lexical import (
+    freeze_lexical,
+    load_pretrained_lexical,
+    get_tokenizer_from_vocab
+)
 from transformers import (
     MODEL_FOR_QUESTION_ANSWERING_MAPPING,
     WEIGHTS_NAME,
@@ -600,6 +604,12 @@ def main():
         help="Pretrained tokenizer name or path if not the same as model_name",
     )
     parser.add_argument(
+        "--tokenizer_vocab",
+        default=None,
+        type=str,
+        help="A vocab file for tokenization",
+    )
+    parser.add_argument(
         "--cache_dir",
         default="",
         type=str,
@@ -817,11 +827,17 @@ def main():
         args.config_name if args.config_name else args.model_name_or_path,
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
-        do_lower_case=args.do_lower_case,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
+
+    if args.tokenizer_vocab:
+        tokenizer = get_tokenizer_from_vocab(args.tokenizer_vocab)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.tokenizer_name if args.tokenizer_name else
+            args.model_name_or_path,
+            do_lower_case=args.do_lower_case,
+            cache_dir=args.cache_dir if args.cache_dir else None,
+        )
+
     model = AutoModelForQuestionAnswering.from_pretrained(
         args.model_name_or_path,
         from_tf=bool(".ckpt" in args.model_name_or_path),

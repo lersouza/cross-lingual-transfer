@@ -34,10 +34,15 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from crosslangt.lexical import load_pretrained_lexical, freeze_lexical
 from typing import Callable, Dict, Optional
 
 import numpy as np
+
+from crosslangt.lexical import (
+    load_pretrained_lexical,
+    freeze_lexical,
+    get_tokenizer_from_vocab
+)
 
 from transformers import (
     AutoConfig,
@@ -77,6 +82,9 @@ class ModelArguments:
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained tokenizer name or path "
                                         " if not the same as model_name"}
+    )
+    tokenizer_vocab: Optional[str] = field(
+        default=None, metadata={"help": "A vocab file for tokenization."}
     )
     cache_dir: Optional[str] = field(
         default=None, metadata={
@@ -170,10 +178,15 @@ def main():
         finetuning_task=data_args.task_name,
         cache_dir=model_args.cache_dir,
     )
-    tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_name,
-        cache_dir=model_args.cache_dir,
-    )
+
+    if model_args.tokenizer_vocab:
+        tokenizer = get_tokenizer_from_vocab(model_args.tokenizer_vocab)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_name,
+            cache_dir=model_args.cache_dir,
+        )
+
     model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),

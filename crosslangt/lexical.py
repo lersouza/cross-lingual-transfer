@@ -1,6 +1,8 @@
 import logging
 import torch
 
+from transformers import BertTokenizer
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,3 +30,11 @@ def load_pretrained_lexical(model, lexical):
     embeddings.load_state_dict(weights)
 
     model.set_input_embeddings(embeddings)
+
+
+def get_tokenizer_from_vocab(vocab_file, lowercase=False):
+    """ Retrieves a `PreTrainedTokenizer` from a vocab file. """
+    tokenizer = BertTokenizer(
+        vocab_file, do_lower_case=lowercase)
+
+    return tokenizer
