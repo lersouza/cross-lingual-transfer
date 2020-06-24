@@ -262,7 +262,7 @@ def main():
                 data_args, task_name="mnli-mm")
             eval_datasets.append(
                 GlueDataset(mnli_mm_data_args, tokenizer=tokenizer,
-                            mode="dev", cache_dir=model_args.cache_dir)
+                            mode="dev")
             )
 
         for eval_dataset in eval_datasets:
@@ -293,7 +293,7 @@ def main():
                 data_args, task_name="mnli-mm")
             test_datasets.append(
                 GlueDataset(mnli_mm_data_args, tokenizer=tokenizer,
-                            mode="test", cache_dir=model_args.cache_dir)
+                            mode="test")
             )
 
         for test_dataset in test_datasets:

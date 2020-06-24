@@ -27,7 +27,7 @@ def load_pretrained_lexical(model, lexical):
         weights.shape[0], weights.shape[1],
         padding_idx=0)
 
-    embeddings.load_state_dict(weights)
+    embeddings.load_state_dict(lexical_state)
 
     model.set_input_embeddings(embeddings)
 
