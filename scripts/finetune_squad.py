@@ -930,6 +930,13 @@ def main():
                 "-")[-1] if len(checkpoints) > 1 else ""
             model = AutoModelForQuestionAnswering.from_pretrained(
                 checkpoint)  # , force_download=True)
+
+            if args.lexical:
+                load_pretrained_lexical(model, args.lexical)
+
+            if args.freeze_lexical:
+                freeze_lexical(model)
+
             model.to(args.device)
 
             # Evaluate
