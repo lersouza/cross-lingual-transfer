@@ -2,10 +2,52 @@ import logging
 import torch
 
 from torch import Tensor
-from transformers import BertTokenizer
+from transformers import BertModel, BertTokenizer
 
 
 logger = logging.getLogger(__name__)
+
+lexical_strategies = ['freeze-all',
+                      'freeze-special',
+                      'freeze-nonspecial',
+                      'none']
+
+
+def setup_lexical(strategy,
+                  model: BertModel,
+                  tokenizer: BertTokenizer,
+                  embeddings_path: str = None):
+    """ Setups the lexical part of `model` based on `strategy`. """
+    assert strategy in lexical_strategies
+
+    original_embeddings = model.get_input_embeddings()
+    tobe_embeddings = None
+
+    # We cut on the last kwown special token
+    # So we get the latest index + 1
+    # (for instance, if the last one is 103, we get 104 ).
+    # This is because SlicedEmbeddings cut on [:cut].
+    bert_special_tokens_cut = sorted(tokenizer.all_special_ids)[-1] + 1
+
+    if strategy == 'freeze-special':
+        tobe_embeddings = SlicedEmbeddings(
+            original_embeddings,
+            bert_special_tokens_cut,
+            freeze_first=True,
+            freeze_second=False)
+    elif strategy == 'freeze-nonspecial':
+        tobe_embeddings = SlicedEmbeddings(
+            original_embeddings,
+            bert_special_tokens_cut,
+            freeze_first=False,
+            freeze_second=True)
+    elif strategy == 'freeze-all':
+        tobe_embeddings = original_embeddings
+        tobe_embeddings.weight.requires_grad = False
+    else:
+        tobe_embeddings = original_embeddings
+
+    model.set_input_embeddings(tobe_embeddings)
 
 
 def freeze_lexical(model):

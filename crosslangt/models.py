@@ -5,11 +5,13 @@ from pytorch_lightning import LightningModule
 from torch.optim import Adam
 from torch.utils.data.dataloader import DataLoader
 from transformers import BertForQuestionAnswering, BertTokenizer
-from transformers.data.metrics.squad_metrics import compute_predictions_logits, squad_evaluate
+from transformers.data.metrics.squad_metrics import (
+    compute_predictions_logits, squad_evaluate)
 from transformers.data.processors.squad import SquadFeatures, SquadResult
 
 from crosslangt.dataprep import (load_question_answer_dataset,
                                  prepare_question_answer_dataset)
+from crosslangt.lexical import setup_lexical
 
 
 class QuestionAnsweringModel(LightningModule):
@@ -20,6 +22,7 @@ class QuestionAnsweringModel(LightningModule):
 
     def __init__(self,
                  pretrained_model: str,
+                 lexical_strategy: str,
                  dataset: str,
                  data_dir: str,
                  batch_size: int,
@@ -29,6 +32,7 @@ class QuestionAnsweringModel(LightningModule):
                  output_dir: str,
                  n_best_size: int = 20,
                  max_answer_length: int = 30,
+                 embeddings_path: str = None,
                  **kwargs) -> None:
 
         super(QuestionAnsweringModel, self).__init__()
@@ -37,6 +41,12 @@ class QuestionAnsweringModel(LightningModule):
 
         self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
         self.bert = BertForQuestionAnswering.from_pretrained(pretrained_model)
+
+        setup_lexical(
+            lexical_strategy,
+            self.bert,
+            self.tokenizer,
+            embeddings_path)
 
     def forward(self, input_ids, attention_mask, token_type_ids,
                 start_positions=None, end_positions=None):
@@ -98,45 +108,44 @@ class QuestionAnsweringModel(LightningModule):
         return {'results': results}
 
     def validation_epoch_end(self, outputs):
-        return {'exact': torch.tensor(0)}
-        # all_results = []
+        all_results = []
 
-        # for output in outputs:
-        #     all_results.extend(output['results'])
+        for output in outputs:
+            all_results.extend(output['results'])
 
-        # output_prediction_file = os.path.join(
-        #     self.hparams.output_dir,
-        #     f'predictions_epoch{self.current_epoch}.json')
+        output_prediction_file = os.path.join(
+            self.hparams.output_dir,
+            f'predictions_epoch{self.current_epoch}.json')
 
-        # output_nbest_file = os.path.join(
-        #     self.hparams.output_dir,
-        #     f'nbest_predictions_epoch{self.current_epoch}.json')
+        output_nbest_file = os.path.join(
+            self.hparams.output_dir,
+            f'nbest_predictions_epoch{self.current_epoch}.json')
 
-        # examples, features = self.__retrieve_eval_feature_set(all_results)
+        examples, features = self.__retrieve_eval_feature_set(all_results)
 
-        # predictions = compute_predictions_logits(
-        #     examples,
-        #     features,
-        #     all_results,
-        #     self.hparams.n_best_size,
-        #     self.hparams.max_answer_length,
-        #     False,
-        #     output_prediction_file,
-        #     output_nbest_file,
-        #     None,
-        #     False,
-        #     False,
-        #     0.0,
-        #     self.tokenizer,
-        # )
+        predictions = compute_predictions_logits(
+            examples,
+            features,
+            all_results,
+            self.hparams.n_best_size,
+            self.hparams.max_answer_length,
+            False,
+            output_prediction_file,
+            output_nbest_file,
+            None,
+            False,
+            False,
+            0.0,
+            self.tokenizer,
+        )
 
-        # results = squad_evaluate(examples, predictions)
+        results = squad_evaluate(examples, predictions)
 
-        # return {
-        #     'exact': torch.tensor(results['exact']),
-        #     'f1': torch.tensor(results['f1']),
-        #     'total': torch.tensor(results['total'])
-        # }
+        return {
+            'exact': torch.tensor(results['exact']),
+            'f1': torch.tensor(results['f1']),
+            'total': torch.tensor(results['total'])
+        }
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
