@@ -98,44 +98,45 @@ class QuestionAnsweringModel(LightningModule):
         return {'results': results}
 
     def validation_epoch_end(self, outputs):
-        all_results = []
+        return {'exact': torch.tensor(0)}
+        # all_results = []
 
-        for output in outputs:
-            all_results.extend(output['results'])
+        # for output in outputs:
+        #     all_results.extend(output['results'])
 
-        output_prediction_file = os.path.join(
-            self.hparams.output_dir,
-            f'predictions_epoch{self.current_epoch}.json')
+        # output_prediction_file = os.path.join(
+        #     self.hparams.output_dir,
+        #     f'predictions_epoch{self.current_epoch}.json')
 
-        output_nbest_file = os.path.join(
-            self.hparams.output_dir,
-            f'nbest_predictions_epoch{self.current_epoch}.json')
+        # output_nbest_file = os.path.join(
+        #     self.hparams.output_dir,
+        #     f'nbest_predictions_epoch{self.current_epoch}.json')
 
-        examples, features = self.__retrieve_eval_feature_set(all_results)
+        # examples, features = self.__retrieve_eval_feature_set(all_results)
 
-        predictions = compute_predictions_logits(
-            examples,
-            features,
-            all_results,
-            self.hparams.n_best_size,
-            self.hparams.max_answer_length,
-            False,
-            output_prediction_file,
-            output_nbest_file,
-            None,
-            False,
-            False,
-            0.0,
-            self.tokenizer,
-        )
+        # predictions = compute_predictions_logits(
+        #     examples,
+        #     features,
+        #     all_results,
+        #     self.hparams.n_best_size,
+        #     self.hparams.max_answer_length,
+        #     False,
+        #     output_prediction_file,
+        #     output_nbest_file,
+        #     None,
+        #     False,
+        #     False,
+        #     0.0,
+        #     self.tokenizer,
+        # )
 
-        results = squad_evaluate(examples, predictions)
+        # results = squad_evaluate(examples, predictions)
 
-        return {
-            'exact': torch.tensor(results['exact']),
-            'f1': torch.tensor(results['f1']),
-            'total': torch.tensor(results['total'])
-        }
+        # return {
+        #     'exact': torch.tensor(results['exact']),
+        #     'f1': torch.tensor(results['f1']),
+        #     'total': torch.tensor(results['total'])
+        # }
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
