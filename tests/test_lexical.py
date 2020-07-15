@@ -1,7 +1,10 @@
 import torch
-from torch import tensor
 
-from crosslangt.lexical import SlicedEmbeddings
+from torch.nn import Embedding
+from transformers import BertModel, BertConfig, BertTokenizer
+
+from crosslangt.lexical import SlicedEmbeddings, setup_lexical
+
 from unittest.case import TestCase
 
 
@@ -102,12 +105,60 @@ class SlicedEmbeddingsTest(TestCase):
                 loss.backward()
                 optimizer.step()
 
-        freezed_original = original_values[:5]
-        trainable_original = original_values[5:]
+        trainable_original = original_values[:5]
+        freezed_original = original_values[5:]
 
-        freezed_actual = model.embeddings.first_embedding.weight
-        trainable_actual = model.embeddings.second_embedding.weight
+        trainable_actual = model.embeddings.first_embedding.weight
+        freezed_actual = model.embeddings.second_embedding.weight
 
-        self.assertFalse(torch.all(freezed_original == freezed_actual).item())
-        self.assertTrue(
+        self.assertTrue(torch.all(freezed_original == freezed_actual).item())
+        self.assertFalse(
             torch.all(trainable_original == trainable_actual).item())
+
+
+class SetupLexicalTest(TestCase):
+    def test_setup_none(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+
+        setup_lexical('none', model, tokenizer)
+
+        self.assertTrue(model.get_input_embeddings().weight.requires_grad)
+
+    def test_setup_freeze_special(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+
+        setup_lexical('freeze-special', model, tokenizer)
+
+        lexical = model.get_input_embeddings()
+        lexical_type = type(lexical)
+
+        self.assertTrue(lexical_type is SlicedEmbeddings)
+        self.assertFalse(lexical.first_embedding.weight.requires_grad)
+        self.assertTrue(lexical.second_embedding.weight.requires_grad)
+
+    def test_setup_freeze_nonspecial(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+
+        setup_lexical('freeze-nonspecial', model, tokenizer)
+
+        lexical = model.get_input_embeddings()
+        lexical_type = type(lexical)
+
+        self.assertTrue(lexical_type is SlicedEmbeddings)
+        self.assertTrue(lexical.first_embedding.weight.requires_grad)
+        self.assertFalse(lexical.second_embedding.weight.requires_grad)
+
+    def test_setup_freeze_all(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+
+        setup_lexical('freeze-all', model, tokenizer)
+
+        lexical = model.get_input_embeddings()
+        lexical_type = type(lexical)
+
+        self.assertTrue(lexical_type is Embedding)
+        self.assertFalse(lexical.weight.requires_grad)

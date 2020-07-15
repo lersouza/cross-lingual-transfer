@@ -24,12 +24,16 @@ QA_DATASETS = {
                 'data/dev.json'
     },
     'squad-en': {
-        'train': '',
-        'eval': '',
+        'train': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+                 'train-v1.1.json',
+        'eval': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+                'dev-v1.1.json',
     },
     'squad-pt': {
-        'train': '',
-        'eval': '',
+        'train': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
+                 'master/train-v1.1-pt.json',
+        'eval': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
+                 'master/dev-v1.1-pt.json',
     },
 }
 
@@ -101,7 +105,9 @@ def load_question_answer_dataset(dataset: str,
     dataset_filepath = os.path.join(data_dir, dataset_filename)
 
     if not os.path.exists(dataset_filepath):
-        logger.error(f'Dataset {dataset_filepath} not found. Consider prepare it first!')
+        logger.error(f'Dataset {dataset_filepath} not found. '
+                     'Consider prepare first!')
+
         raise IOError(f'Dataset {dataset_filepath} was not found.')
 
     with open(dataset_filepath, 'rb') as dataset:
