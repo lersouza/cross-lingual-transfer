@@ -3,6 +3,7 @@ lxml
 nltk
 numpy
 requests
+pytorch_lightning
 torch
 tqdm
 transformers

@@ -201,7 +201,7 @@ class QuestionAnsweringModel(LightningModule):
         examples = self.eval_examples
         features = self.eval_features
 
-        if len(results != features):
+        if len(results) != len(features):
             # Working with a subset of the data (probably Fast Dev Run Mode)
             examples = [
                 self.eval_examples[
