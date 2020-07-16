@@ -1,15 +1,20 @@
 import os
-import torch
+from pytorch_lightning.trainer.trainer import Trainer
 
+import torch
 from pytorch_lightning import LightningModule
+from pytorch_lightning.metrics import Accuracy
 from torch.optim import Adam
 from torch.utils.data.dataloader import DataLoader
-from transformers import BertForQuestionAnswering, BertTokenizer
+from transformers import (BertConfig, BertForQuestionAnswering,
+                          BertForSequenceClassification, BertTokenizer)
 from transformers.data.metrics.squad_metrics import (
     compute_predictions_logits, squad_evaluate)
 from transformers.data.processors.squad import SquadFeatures, SquadResult
 
-from crosslangt.dataprep import (load_question_answer_dataset,
+from crosslangt.dataprep import (load_nli_dataset,
+                                 load_question_answer_dataset,
+                                 prepare_nli_dataset,
                                  prepare_question_answer_dataset)
 from crosslangt.lexical import setup_lexical
 
@@ -22,8 +27,10 @@ class QuestionAnsweringModel(LightningModule):
 
     def __init__(self,
                  pretrained_model: str,
-                 lexical_strategy: str,
-                 dataset: str,
+                 train_lexical_strategy: str,
+                 test_lexical_strategy: str,
+                 train_dataset: str,
+                 test_dataset: str,
                  data_dir: str,
                  batch_size: int,
                  max_seq_length: int,
@@ -41,12 +48,6 @@ class QuestionAnsweringModel(LightningModule):
 
         self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
         self.bert = BertForQuestionAnswering.from_pretrained(pretrained_model)
-
-        setup_lexical(
-            lexical_strategy,
-            self.bert,
-            self.tokenizer,
-            embeddings_path)
 
     def forward(self, input_ids, attention_mask, token_type_ids,
                 start_positions=None, end_positions=None):
@@ -80,7 +81,7 @@ class QuestionAnsweringModel(LightningModule):
 
         return {'loss': loss, 'log': logs}
 
-    def validation_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx):
         parameters = {
             'input_ids': batch[0],
             'attention_mask': batch[1],
@@ -107,7 +108,7 @@ class QuestionAnsweringModel(LightningModule):
 
         return {'results': results}
 
-    def validation_epoch_end(self, outputs):
+    def test_epoch_end(self, outputs):
         all_results = []
 
         for output in outputs:
@@ -155,7 +156,7 @@ class QuestionAnsweringModel(LightningModule):
             num_workers=3
         )
 
-    def val_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> DataLoader:
         return DataLoader(
             dataset=self.eval_dataset,
             shuffle=False,
@@ -185,25 +186,36 @@ class QuestionAnsweringModel(LightningModule):
         )
 
     def setup(self, stage: str):
-        train_data = load_question_answer_dataset(
-            self.hparams.dataset,
-            'train',
-            self.hparams.data_dir,
-            self.hparams.max_seq_length
-        )
-        self.train_dataset = train_data['dataset']
+        if stage == 'fit':
+            setup_lexical(
+                self.hparams.train_lexical_strategy,
+                self.bert,
+                self.tokenizer,
+                self.hparams.embeddings_path)
 
-        eval_data = load_question_answer_dataset(
-            self.hparams.dataset,
-            'eval',
-            self.hparams.data_dir,
-            self.hparams.max_seq_length
-        )
+            train_data = load_question_answer_dataset(
+                self.hparams.dataset,
+                'train',
+                self.hparams.data_dir,
+                self.hparams.max_seq_length
+            )
+            self.train_dataset = train_data['dataset']
 
-        self.eval_dataset = eval_data['dataset']
-        self.eval_examples = eval_data['examples']
-        self.eval_features = eval_data['features']
-        self.eval_features_index = {f.unique_id: f for f in self.eval_features}
+        elif stage == 'test':
+            # TODO: Implement Lexical strategy in test
+
+            eval_data = load_question_answer_dataset(
+                self.hparams.dataset,
+                'eval',
+                self.hparams.data_dir,
+                self.hparams.max_seq_length
+            )
+
+            self.eval_dataset = eval_data['dataset']
+            self.eval_examples = eval_data['examples']
+            self.eval_features = eval_data['features']
+            self.eval_features_index = {
+                f.unique_id: f for f in self.eval_features}
 
         os.makedirs(self.hparams.output_dir, exist_ok=True)
 
@@ -223,14 +235,133 @@ class QuestionAnsweringModel(LightningModule):
         return examples, features
 
 
-if __name__ == '__main__':
-    from pytorch_lightning import Trainer
+class NLIModel(LightningModule):
+    def __init__(self,
+                 pretrained_model: str,
+                 num_classes: int,
+                 train_lexical_strategy: str,
+                 test_lexical_strategy: str,
+                 train_dataset: str,
+                 test_dataset: str,
+                 data_dir: str,
+                 batch_size: int,
+                 max_seq_length: int,
+                 embeddings_path: str = None,
+                 **kwargs) -> None:
 
-    trainer = Trainer(fast_dev_run=True)
-    model = QuestionAnsweringModel(
-        'bert-base-cased',
-        'faquad',
-        '/tmp/datasets/faquad',
-        12, 256, 64, 128, '/tmp/output/faquad')
+        super(NLIModel, self).__init__()
 
-    trainer.fit(model)
+        self.save_hyperparameters()
+
+        config = BertConfig.from_pretrained(
+            pretrained_model,
+            num_labels=num_classes)
+
+        self.bert = BertForSequenceClassification.from_pretrained(
+            pretrained_model, config=config)
+        self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
+
+        self.metric = Accuracy(num_classes=num_classes)
+
+    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+        outputs = self.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            labels=labels
+        )
+
+        return outputs
+
+    def configure_optimizers(self):
+        return Adam(self.bert.parameters(), lr=2e-5)
+
+    def training_step(self, batch, batch_idx):
+        input_ids, attention_mask, token_type_ids, labels = \
+            batch['input_ids'], batch['attention_mask'], \
+            batch['token_type_ids'], batch['label']
+
+        outputs = self(input_ids, attention_mask, token_type_ids, labels)
+        loss = outputs[0]
+        logits = outputs[1]
+
+        accuracy = self.metric(logits, labels)
+
+        logs = {'train_loss': loss, 'train_acc': accuracy}
+        tensor_bar = {'train_acc': accuracy}
+
+        return {'loss': loss, 'log': logs, 'progress_bar': tensor_bar}
+
+    def test_step(self, batch, batch_idx):
+        input_ids, attention_mask, token_type_ids, labels = \
+            batch['input_ids'], batch['attention_mask'], \
+            batch['token_type_ids'], batch['label']
+
+        outputs = self(input_ids, attention_mask, token_type_ids)
+        logits = outputs[0]
+
+        accuracy = self.metric(logits, labels)
+
+        logs = {'test_acc': accuracy}
+        return {'test_acc': accuracy, 'log': logs, 'progress_bar': logs}
+
+    def test_epoch_end(self, outputs):
+        accuracies = torch.stack([o['test_acc'] for o in outputs])
+        mean_accuracy = accuracies.mean()
+
+        return {'test_avg_accuracy': mean_accuracy}
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train_dataset,
+            self.hparams.batch_size,
+            shuffle=True,
+            num_workers=8
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
+            self.hparams.batch_size,
+            shuffle=False,
+            num_workers=8
+        )
+
+    def prepare_data(self) -> None:
+        prepare_nli_dataset(
+            self.hparams.train_dataset,
+            'train',
+            self.hparams.data_dir,
+            self.tokenizer,
+            self.hparams.max_seq_length)
+
+        prepare_nli_dataset(
+            self.hparams.test_dataset,
+            'eval',
+            self.hparams.data_dir,
+            self.tokenizer,
+            self.hparams.max_seq_length)
+
+    def setup(self, stage: str):
+        if stage == 'fit':
+            setup_lexical(
+                self.hparams.train_lexical_strategy,
+                self.bert,
+                self.tokenizer,
+                self.hparams.embeddings_path
+            )
+
+            self.train_dataset = load_nli_dataset(
+                self.hparams.train_dataset,
+                'train',
+                self.hparams.data_dir,
+                self.hparams.max_seq_length
+            )
+        elif stage == 'test':
+            # TODO Implement test lexical strategy
+            self.test_dataset = load_nli_dataset(
+                self.hparams.test_dataset,
+                'eval',
+                self.hparams.data_dir,
+                self.hparams.max_seq_length
+            )
