@@ -28,13 +28,13 @@ class ASSIN2Processor(DataProcessor):
 
     def get_train_examples(self, data_dir):
         return self._create_examples(
-            os.path.join(data_dir, "train.xml"),
-            "train")
+            os.path.join(data_dir, 'assin2-train-only.xml'),
+            'train')
 
     def get_dev_examples(self, data_dir):
         return self._create_examples(
-            os.path.join(data_dir, "dev.xml"),
-            "train")
+            os.path.join(data_dir, 'assin2-test.xml'),
+            'dev')
 
     def _create_examples(self, file, set_type) -> List[InputExample]:
         with open(file, 'r') as assin_xml:
@@ -49,10 +49,7 @@ class ASSIN2Processor(DataProcessor):
             pairID = pair.attrib['id']
             sentence1 = sentence2 = ''
 
-            # Map None to Neutral
-            entailment = 'neutral' if entailment == 'none' else entailment
-
-            if entailment not in ['neutral', 'entailment', 'contradiction']:
+            if entailment not in ['none', 'entailment']:
                 continue  # Ignoring labels that are not in MNLI dataset
 
             for child in pair:
@@ -90,6 +87,8 @@ QA_DATASETS = {
 }
 
 
+# In the NLI Datasets, the labels must be aligned, so transfer learning
+# across languages is possible.
 NLI_DATASETS = {
     'mnli': {
         'zip': 'https://firebasestorage.googleapis.com/v0/b/'
@@ -101,9 +100,10 @@ NLI_DATASETS = {
         'labels': ['neutral', 'entailment', 'contradiction']
     },
     'assin2': {
-        'zip': '',
-        'train': '',
-        'eval': '',
+        'zip': 'https://github.com/lersouza/cross-lingual-transfer/raw/'
+               'master/datasets/ASSIN2.zip',
+        'train': 'ASSIN2/assin2-train-only.xml',
+        'eval': 'ASSIN2/assin2-test.xml',
         'processor': ASSIN2Processor,
         'labels': ['none', 'entailment']
     }
@@ -183,7 +183,7 @@ def load_nli_dataset(dataset: str,
     with open(dataset_filepath, 'rb') as dataset:
         contents = torch.load(dataset)
 
-    return NLIDataset(contents['features'])
+    return NLIDataset(contents)
 
 
 def prepare_question_answer_dataset(dataset: str,
@@ -331,9 +331,20 @@ def extract_file_name(req: Request):
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
+    tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
     prepare_nli_dataset(
-        'mnli',
+        'assin2',
         'eval',
-        '/tmp/mnli/',
-        BertTokenizer.from_pretrained('bert-base-cased'),
+        '/tmp/assin2/',
+        tokenizer,
         max_seq_length=128)
+
+    dataset = load_nli_dataset(
+        'assin2',
+        'eval',
+        '/tmp/assin2',
+        128
+    )
+
+    print(len(dataset))
+    print(tokenizer.decode(dataset[0]['input_ids']))
