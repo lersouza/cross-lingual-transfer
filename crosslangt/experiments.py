@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
 
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks import model_checkpoint
 from torch import exp
 
 from crosslangt.models import NLIModel
@@ -63,8 +62,11 @@ def run_nli_experiment(
     model_checkpoint: str = None,
     output_path: str = DEFAULT_EXPERIMENT_LOCATION,
     run_training: bool = True,
-    run_test: bool = True
+    run_test: bool = True,
+    seed: int = 123
 ):
+    seed_everything(seed)
+
     base_exp_path = os.path.join(output_path, experiment_name)
     last_checkpoint = None
 
