@@ -289,8 +289,9 @@ class NLIModel(LightningModule):
         outputs = self(input_ids, attention_mask, token_type_ids, labels)
         loss = outputs[0]
         logits = outputs[1]
+        predicted = torch.argmax(logits, dim=-1)
 
-        accuracy = self.metric(logits, labels)
+        accuracy = self.metric(predicted, labels)
 
         logs = {'train_loss': loss, 'train_acc': accuracy}
         tensor_bar = {'train_acc': accuracy}
@@ -304,8 +305,9 @@ class NLIModel(LightningModule):
 
         outputs = self(input_ids, attention_mask, token_type_ids)
         logits = outputs[0]
+        predicted = torch.argmax(logits, dim=-1)
 
-        accuracy = self.metric(logits, labels)
+        accuracy = self.metric(predicted, labels)
 
         logs = {'test_acc': accuracy}
         return {'test_acc': accuracy, 'log': logs, 'progress_bar': logs}
