@@ -3,9 +3,11 @@ import torch
 from torch.nn import Embedding
 from transformers import BertModel, BertConfig, BertTokenizer
 
-from crosslangt.lexical import SlicedEmbeddings, setup_lexical
+from crosslangt.lexical import (SlicedEmbedding, setup_lexical_for_testing,
+                                setup_lexical_for_training)
 
 from unittest.case import TestCase
+from unittest.mock import patch
 
 
 class SimpleNetwork(torch.nn.Module):
@@ -26,7 +28,7 @@ class SlicedEmbeddingsTest(TestCase):
 
     def test_lookup_embeddings(self):
         original_embedding = torch.nn.Embedding(10, 2)
-        slieced_embedding = SlicedEmbeddings(
+        slieced_embedding = SlicedEmbedding.slice(
             original_embedding, 5, True, False)
 
         batch_for_original = torch.tensor([[0, 1], [8, 9]])
@@ -43,7 +45,7 @@ class SlicedEmbeddingsTest(TestCase):
         are being updated correctly.
         """
         original_embedding = torch.nn.Embedding(10, 2)
-        slieced_embedding = SlicedEmbeddings(
+        slieced_embedding = SlicedEmbedding.slice(
             original_embedding, 5, True, False)
 
         # We clone the original weigths, since they are updated
@@ -82,7 +84,7 @@ class SlicedEmbeddingsTest(TestCase):
         are being updated correctly.
         """
         original_embedding = torch.nn.Embedding(10, 2)
-        slieced_embedding = SlicedEmbeddings(
+        slieced_embedding = SlicedEmbedding.slice(
             original_embedding, 5, False, True)
 
         # We clone the original weigths, since they are updated
@@ -116,12 +118,12 @@ class SlicedEmbeddingsTest(TestCase):
             torch.all(trainable_original == trainable_actual).item())
 
 
-class SetupLexicalTest(TestCase):
+class SetupLexicalForTrainingTest(TestCase):
     def test_setup_none(self):
         model = BertModel.from_pretrained('bert-base-cased')
         tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
 
-        setup_lexical('none', model, tokenizer)
+        setup_lexical_for_training('none', model, tokenizer)
 
         self.assertTrue(model.get_input_embeddings().weight.requires_grad)
 
@@ -129,12 +131,12 @@ class SetupLexicalTest(TestCase):
         model = BertModel.from_pretrained('bert-base-cased')
         tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
 
-        setup_lexical('freeze-special', model, tokenizer)
+        setup_lexical_for_training('freeze-special', model, tokenizer)
 
         lexical = model.get_input_embeddings()
         lexical_type = type(lexical)
 
-        self.assertTrue(lexical_type is SlicedEmbeddings)
+        self.assertTrue(lexical_type is SlicedEmbedding)
         self.assertFalse(lexical.first_embedding.weight.requires_grad)
         self.assertTrue(lexical.second_embedding.weight.requires_grad)
 
@@ -142,12 +144,12 @@ class SetupLexicalTest(TestCase):
         model = BertModel.from_pretrained('bert-base-cased')
         tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
 
-        setup_lexical('freeze-nonspecial', model, tokenizer)
+        setup_lexical_for_training('freeze-nonspecial', model, tokenizer)
 
         lexical = model.get_input_embeddings()
         lexical_type = type(lexical)
 
-        self.assertTrue(lexical_type is SlicedEmbeddings)
+        self.assertTrue(lexical_type is SlicedEmbedding)
         self.assertTrue(lexical.first_embedding.weight.requires_grad)
         self.assertFalse(lexical.second_embedding.weight.requires_grad)
 
@@ -155,10 +157,68 @@ class SetupLexicalTest(TestCase):
         model = BertModel.from_pretrained('bert-base-cased')
         tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
 
-        setup_lexical('freeze-all', model, tokenizer)
+        setup_lexical_for_training('freeze-all', model, tokenizer)
 
         lexical = model.get_input_embeddings()
         lexical_type = type(lexical)
 
         self.assertTrue(lexical_type is Embedding)
         self.assertFalse(lexical.weight.requires_grad)
+
+
+class SetupLexicalForTestingTest(TestCase):
+    def test_setup_original(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        model_embedding = model.get_input_embeddings()
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+
+        setup_lexical_for_testing('original', model, tokenizer, None)
+
+        new_lexical = model.get_input_embeddings()
+        new_lexical_type = type(new_lexical)
+
+        self.assertTrue(new_lexical_type is Embedding)
+        self.assertEqual(model_embedding, new_lexical)
+
+    def test_setup_target_lexical(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+        target_emb = torch.nn.Embedding(10, 768)
+
+        with patch('crosslangt.lexical.torch.load',
+                   return_value={'weight': target_emb.weight}):
+
+            setup_lexical_for_testing('target-lexical', model, tokenizer,
+                                      'some_path')
+
+        new_lexical = model.get_input_embeddings()
+        new_lexical_type = type(new_lexical)
+
+        self.assertTrue(new_lexical_type is Embedding)
+        self.assertTrue(
+            torch.all(new_lexical.weight == target_emb.weight).item())
+
+    @patch('crosslangt.lexical.BertTokenizer.all_special_ids', [0])
+    def test_setup_target_lexical_special_original(self):
+        model = BertModel.from_pretrained('bert-base-cased')
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
+
+        target = torch.nn.Embedding(10, 768)
+        original = model.get_input_embeddings()
+
+        with patch('crosslangt.lexical.torch.load',
+                   return_value={'weight': target.weight}):
+
+            setup_lexical_for_testing('target-lexical-original-special', model,
+                                      tokenizer, 'some_path')
+
+        new_lexical = model.get_input_embeddings()
+        new_lexical_type = type(new_lexical)
+
+        self.assertTrue(new_lexical_type is SlicedEmbedding)
+
+        fe = new_lexical.first_embedding
+        se = new_lexical.second_embedding
+
+        self.assertTrue(torch.all(fe.weight == original.weight[:1]).item())
+        self.assertTrue(torch.all(se.weight == target.weight[1:]).item())

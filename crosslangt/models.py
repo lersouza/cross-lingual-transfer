@@ -16,7 +16,8 @@ from crosslangt.dataprep import (load_nli_dataset,
                                  load_question_answer_dataset,
                                  prepare_nli_dataset,
                                  prepare_question_answer_dataset)
-from crosslangt.lexical import setup_lexical
+from crosslangt.lexical import (setup_lexical_for_training,
+                                setup_lexical_for_testing)
 
 
 class QuestionAnsweringModel(LightningModule):
@@ -39,7 +40,7 @@ class QuestionAnsweringModel(LightningModule):
                  output_dir: str,
                  n_best_size: int = 20,
                  max_answer_length: int = 30,
-                 embeddings_path: str = None,
+                 test_lexical_path: str = None,
                  **kwargs) -> None:
 
         super(QuestionAnsweringModel, self).__init__()
@@ -187,11 +188,10 @@ class QuestionAnsweringModel(LightningModule):
 
     def setup(self, stage: str):
         if stage == 'fit':
-            setup_lexical(
+            setup_lexical_for_training(
                 self.hparams.train_lexical_strategy,
                 self.bert,
-                self.tokenizer,
-                self.hparams.embeddings_path)
+                self.tokenizer)
 
             train_data = load_question_answer_dataset(
                 self.hparams.dataset,
@@ -202,7 +202,12 @@ class QuestionAnsweringModel(LightningModule):
             self.train_dataset = train_data['dataset']
 
         elif stage == 'test':
-            # TODO: Implement Lexical strategy in test
+            setup_lexical_for_testing(
+                self.hparams.test_lexical_strategy,
+                self.bert,
+                self.tokenizer,
+                self.hparams.test_lexical_path
+            )
 
             eval_data = load_question_answer_dataset(
                 self.hparams.dataset,
@@ -246,7 +251,7 @@ class NLIModel(LightningModule):
                  data_dir: str,
                  batch_size: int,
                  max_seq_length: int,
-                 embeddings_path: str = None,
+                 test_lexical_path: str = None,
                  **kwargs) -> None:
 
         super(NLIModel, self).__init__()
@@ -344,12 +349,10 @@ class NLIModel(LightningModule):
 
     def setup(self, stage: str):
         if stage == 'fit':
-            setup_lexical(
+            setup_lexical_for_training(
                 self.hparams.train_lexical_strategy,
                 self.bert,
-                self.tokenizer,
-                self.hparams.embeddings_path
-            )
+                self.tokenizer)
 
             self.train_dataset = load_nli_dataset(
                 self.hparams.train_dataset,
@@ -358,7 +361,13 @@ class NLIModel(LightningModule):
                 self.hparams.max_seq_length
             )
         elif stage == 'test':
-            # TODO Implement test lexical strategy
+            setup_lexical_for_testing(
+                self.hparams.test_lexical_strategy,
+                self.bert,
+                self.tokenizer,
+                self.hparams.test_lexical_path
+            )
+
             self.test_dataset = load_nli_dataset(
                 self.hparams.test_dataset,
                 'eval',
