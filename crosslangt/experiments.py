@@ -1,3 +1,4 @@
+import re
 import os
 from pathlib import Path
 
@@ -35,11 +36,11 @@ def retrieve_last_checkpoint(experiment_path: str):
         return None
 
     # All checkpoints should separate vars by '-'
-    # and the first one is the epoch (or global step)
+    # and the first one is the epoch (epoch=0, for instance)
     # to be sorted here.
     by_epoch = sorted(
         all_checkpoints,
-        key=lambda file: file.split('-')[0],
+        key=lambda file: re.findall(r'epoch=(\d+)', file)[0],
         reverse=True)
 
     return by_epoch[0]
