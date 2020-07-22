@@ -41,13 +41,15 @@ class QuestionAnsweringModel(LightningModule):
                  n_best_size: int = 20,
                  max_answer_length: int = 30,
                  test_lexical_path: str = None,
+                 tokenizer_name: str = None,
+                 test_tokenizer_name: str = None,
                  **kwargs) -> None:
 
         super(QuestionAnsweringModel, self).__init__()
 
         self.save_hyperparameters()
 
-        self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
+        self.train_tokenizer, self.test_tokenizer = self.__get_tokenizers()
         self.bert = BertForQuestionAnswering.from_pretrained(pretrained_model)
 
     def forward(self, input_ids, attention_mask, token_type_ids,
@@ -138,7 +140,7 @@ class QuestionAnsweringModel(LightningModule):
             False,
             False,
             0.0,
-            self.tokenizer,
+            self.test_tokenizer,
         )
 
         results = squad_evaluate(examples, predictions)
@@ -170,7 +172,7 @@ class QuestionAnsweringModel(LightningModule):
             self.hparams.dataset,
             'train',
             self.hparams.data_dir,
-            self.tokenizer,
+            self.train_tokenizer,
             self.hparams.max_seq_length,
             self.hparams.doc_stride,
             self.hparams.max_query_length
@@ -180,7 +182,7 @@ class QuestionAnsweringModel(LightningModule):
             self.hparams.dataset,
             'eval',
             self.hparams.data_dir,
-            self.tokenizer,
+            self.test_tokenizer,
             self.hparams.max_seq_length,
             self.hparams.doc_stride,
             self.hparams.max_query_length
@@ -191,7 +193,7 @@ class QuestionAnsweringModel(LightningModule):
             setup_lexical_for_training(
                 self.hparams.train_lexical_strategy,
                 self.bert,
-                self.tokenizer)
+                self.train_tokenizer)
 
             train_data = load_question_answer_dataset(
                 self.hparams.dataset,
@@ -205,7 +207,7 @@ class QuestionAnsweringModel(LightningModule):
             setup_lexical_for_testing(
                 self.hparams.test_lexical_strategy,
                 self.bert,
-                self.tokenizer,
+                self.test_tokenizer,
                 self.hparams.test_lexical_path
             )
 
@@ -223,6 +225,18 @@ class QuestionAnsweringModel(LightningModule):
                 f.unique_id: f for f in self.eval_features}
 
         os.makedirs(self.hparams.output_dir, exist_ok=True)
+
+    def __get_tokenizers(self):
+        train_tokenizer = BertTokenizer.from_pretrained(
+            self.hparams.tokenizer_name or self.hparams.pretrained_model)
+
+        test_tokenizer = train_tokenizer  # By default, they are the same.
+
+        if self.hparams.test_tokenizer_name is not None:
+            test_tokenizer = BertTokenizer.from_pretrained(
+                self.hparams.test_tokenizer_name)
+
+        return (train_tokenizer, test_tokenizer)
 
     def __retrieve_eval_feature_set(self, results):
         examples = self.eval_examples
@@ -252,6 +266,8 @@ class NLIModel(LightningModule):
                  batch_size: int,
                  max_seq_length: int,
                  test_lexical_path: str = None,
+                 tokenizer_name: str = None,
+                 test_tokenizer_name: str = None,
                  **kwargs) -> None:
 
         super(NLIModel, self).__init__()
@@ -264,8 +280,8 @@ class NLIModel(LightningModule):
 
         self.bert = BertForSequenceClassification.from_pretrained(
             pretrained_model, config=config)
-        self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
 
+        self.train_tokenizer, self.test_tokenizer = self.__get_tokenizers()
         self.metric = Accuracy(num_classes=num_classes)
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
@@ -339,14 +355,14 @@ class NLIModel(LightningModule):
             self.hparams.train_dataset,
             'train',
             self.hparams.data_dir,
-            self.tokenizer,
+            self.train_tokenizer,
             self.hparams.max_seq_length)
 
         prepare_nli_dataset(
             self.hparams.test_dataset,
             'eval',
             self.hparams.data_dir,
-            self.tokenizer,
+            self.test_tokenizer,
             self.hparams.max_seq_length)
 
     def setup(self, stage: str):
@@ -354,7 +370,7 @@ class NLIModel(LightningModule):
             setup_lexical_for_training(
                 self.hparams.train_lexical_strategy,
                 self.bert,
-                self.tokenizer)
+                self.train_tokenizer)
 
             self.train_dataset = load_nli_dataset(
                 self.hparams.train_dataset,
@@ -366,7 +382,7 @@ class NLIModel(LightningModule):
             setup_lexical_for_testing(
                 self.hparams.test_lexical_strategy,
                 self.bert,
-                self.tokenizer,
+                self.test_tokenizer,
                 self.hparams.test_lexical_path
             )
 
@@ -376,3 +392,15 @@ class NLIModel(LightningModule):
                 self.hparams.data_dir,
                 self.hparams.max_seq_length
             )
+
+    def __get_tokenizers(self):
+        train_tokenizer = BertTokenizer.from_pretrained(
+            self.hparams.tokenizer_name or self.hparams.pretrained_model)
+
+        test_tokenizer = train_tokenizer  # By default, they are the same.
+
+        if self.hparams.test_tokenizer_name is not None:
+            test_tokenizer = BertTokenizer.from_pretrained(
+                self.hparams.test_tokenizer_name)
+
+        return (train_tokenizer, test_tokenizer)

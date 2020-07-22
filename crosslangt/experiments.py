@@ -63,7 +63,9 @@ def run_nli_experiment(
     output_path: str = DEFAULT_EXPERIMENT_LOCATION,
     run_training: bool = True,
     run_test: bool = True,
-    seed: int = 123
+    seed: int = 123,
+    train_tokenizer_name: str = None,
+    test_tokenizer_name: str = None
 ):
     seed_everything(seed)
 
@@ -91,7 +93,9 @@ def run_nli_experiment(
             data_dir=DEFAULT_DATA_DIR,
             batch_size=batch_size,
             max_seq_length=max_seq_length,
-            test_lexical_path=test_lexical_path)
+            tokenizer_name=train_tokenizer_name,
+            test_lexical_path=test_lexical_path,
+            test_tokenizer_name=test_tokenizer_name)
     else:
         model = NLIModel(
             pretrained_model=pretrained_model,
@@ -103,7 +107,9 @@ def run_nli_experiment(
             data_dir=DEFAULT_DATA_DIR,
             batch_size=batch_size,
             max_seq_length=max_seq_length,
-            test_lexical_path=test_lexical_path)
+            tokenizer_name=train_tokenizer_name,
+            test_lexical_path=test_lexical_path,
+            test_tokenizer_name=test_tokenizer_name)
 
     model_checkpoint = get_model_checkpoint_callback(base_exp_path,
                                                      NLI_CHECKPOINT_FORMAT)
