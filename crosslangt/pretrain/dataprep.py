@@ -1,10 +1,9 @@
-import h5py
+import os
 import logging
-import numpy as np
 
 from dataclasses import dataclass
+from pytorch_lightning import seed_everything
 from random import random, randint, shuffle
-import torch
 from transformers import BertTokenizerFast
 from tqdm import tqdm
 from typing import List
@@ -223,3 +222,52 @@ def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens):
             del trunc_tokens[0]
         else:
             trunc_tokens.pop()
+
+
+def generate_examples_from_file(file, tokenizer_name, output, max_seq_length):
+    """
+    Generate training examples from an specific file.
+    """
+    documents = [[]]
+    tokenizer = BertTokenizerFast.from_pretrained(tokenizer_name)
+
+    all_lines = file.readlines()
+
+    for line in tqdm(all_lines, f'loading {file.name}'):
+        line = line.strip()
+
+        if not line:  # End of document
+            documents.append([])  # Prepare for the next doc
+            continue
+
+        # Tokenize line (sentence) and append to document
+        encoded = tokenizer.tokenize(line)
+
+        if encoded:
+            documents[-1].append(encoded)
+
+    output_path = os.path.join(output, f'{file.name}.examples')
+
+    gen_file, num_examples = create_training_intances(
+        documents, max_seq_length, output_path, tokenizer,
+        tqdm_desc=f'creating instances for {file.name}')
+
+    return gen_file, num_examples
+
+
+def generate_examples(input_files, tokenizer_name, output, max_seq_length,
+                      random_seed, files_type='train'):
+    """
+    Generate training examples based on the `input_files`.
+    """
+    seed_everything(random_seed)  # Make it reproducible
+
+    with open(os.path.join(output, f'{files_type}_index'), 'w+') as index:
+        for file in input_files:
+            with file:
+                gen, qty = generate_examples_from_file(
+                    file, tokenizer_name, output, max_seq_length)
+
+                gen = os.path.abspath(gen)  # resolve the full path
+
+                index.write(f'{gen}\t{qty}\r\n')
