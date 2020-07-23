@@ -5,7 +5,7 @@ SCRIPTS="$ROOT/scripts"
 
 LANG=$1
 TARGET=${2:-"$ROOT/output"}
-SEED=${3:-54321}
+SEED=${3:-123}
 
 WIKI_DIR="$TARGET/datasets/$LANG/bz2"
 WIKI_FILE="${LANG}wiki-latest-pages-articles.xml.bz2"
@@ -97,7 +97,7 @@ echo ""
 
 
 echo "[4] Splitting large files"
-SPLIT_SIZE=300000
+SPLIT_SIZE=100000
 
 if (($TRAIN_SPLIT > $SPLIT_SIZE )); then
   echo "- Splitting training data"

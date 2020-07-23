@@ -1,20 +1,20 @@
 import argparse
 import os
+from os import name
 
 from tqdm import tqdm
+from transformers.tokenization_bert import BertTokenizerFast
 
-from crosslangt.pretrain.dataset import create_training_intances
+from crosslangt.pretrain.dataprep import create_training_intances
 from pytorch_lightning import seed_everything
-from tokenizers import BertWordPieceTokenizer
 
 
-def generate_examples_from_file(file, vocab, output, max_seq_length):
+def generate_examples_from_file(file, tokenizer_name, output, max_seq_length):
     """
     Generate training examples from an specific file.
     """
     documents = [[]]
-    tokenizer = BertWordPieceTokenizer(vocab, lowercase=False,
-                                       strip_accents=False)
+    tokenizer = BertTokenizerFast.from_pretrained(tokenizer_name)
 
     all_lines = file.readlines()
 
@@ -26,28 +26,36 @@ def generate_examples_from_file(file, vocab, output, max_seq_length):
             continue
 
         # Tokenize line (sentence) and append to document
-        encoded = tokenizer.encode(line, add_special_tokens=False)
+        encoded = tokenizer.tokenize(line)
 
-        if encoded and encoded.tokens:
-            documents[-1].append(encoded.tokens)
+        if encoded:
+            documents[-1].append(encoded)
 
     output_path = os.path.join(output, f'{file.name}.examples')
 
-    create_training_intances(
+    gen_file, num_examples = create_training_intances(
         documents, max_seq_length, output_path, tokenizer,
         tqdm_desc=f'creating instances for {file.name}')
 
+    return gen_file, num_examples
 
-def generate_examples(input_files, vocab, output, max_seq_length,
+
+def generate_examples(input_files, tokenizer_name, output, max_seq_length,
                       random_seed):
     """
     Generate training examples based on the `input_files`.
     """
     seed_everything(random_seed)  # Make it reproducible
 
-    for file in input_files:
-        with file:
-            generate_examples_from_file(file, vocab, output, max_seq_length)
+    with open(os.path.join(output, 'index_file'), 'w+') as index:
+        for file in input_files:
+            with file:
+                gen, qty = generate_examples_from_file(
+                    file, tokenizer_name, output, max_seq_length)
+
+                gen = os.path.abspath(gen)  # resolve the full path
+
+                index.write(f'{gen}\t{qty}\r\n')
 
 
 def main():
@@ -63,10 +71,10 @@ def main():
     parser.add_argument('-o', '--output', type=str, default='./',
                         help='Output directory to store examples')
 
-    parser.add_argument('--vocab', type=str, default='vocab.txt',
-                        help='The vocab file to tokenize input files.')
+    parser.add_argument('--tokenizer_name', type=str, default='vocab.txt',
+                        help='The name of the tokenizer to use.')
 
-    parser.add_argument('--random_seed', type=int, default=54321,
+    parser.add_argument('--random_seed', type=int, default=123,
                         help='A random seed to be able to reproduce results.')
 
     args = parser.parse_args()

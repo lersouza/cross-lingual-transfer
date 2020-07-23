@@ -1,231 +1,151 @@
-import collections
-import h5py
-import logging
-import numpy as np
+import linecache
+import os
+from typing import Tuple
+import torch
 
 from dataclasses import dataclass
-from random import random, randint, shuffle
-from tokenizers import BertWordPieceTokenizer
-from tqdm import tqdm
-from typing import List
-
-
-logger = logging.getLogger(__name__)
+from torch.utils.data import Dataset
+from transformers.tokenization_bert import BertTokenizer
 
 
 @dataclass
-class PreTrainInstace():
-    """
-    Represents and example (instance) for Pre training BERT.
-    This examples consists of:
-
-    - sentence_pair: A list of tokens representing a sentence pair.
-                     Start token is always [CLS] and end token is [SEP].
-                     The sentences are divided by an additional [SEP] token.
-
-                     Example:
-                     - '[CLS]', 'sent1', '[SEP]', 'sent2', '[SEP]'
-
-    - segment_ids:   A list of size len(sentence_pair) with 0 to represent
-                     the tokens of first sentence and 1 for the second.
-
-    - is_next:       A flag indicating whether or not the second sentence
-                     actual follows the first one. Used for NSP task.
-    """
-    sentence_pair: List[str]
-    segment_ids: List[int]
-    is_next: bool
+class IndexEntry:
+    start_index: int
+    end_index: int
+    file_location: str
 
 
-def create_training_intances(documents, max_seq_length, output_path,
-                             tokenizer: BertWordPieceTokenizer,
-                             use_tqdm=True,
-                             tqdm_desc='processing documents'):
-    """
-    Creates Pre-training instances for the provided `documents`.
-    This implementation is based on BERT's public code.
+class LexicalTrainDataset(Dataset):
+    def __init__(self, index_file: str, tokenizer: BertTokenizer,
+                 mlm_probability: float = 0.15):
+        assert os.path.exists(index_file)
 
-    Input parameters are:
-    - documents: A list of documents. Each document is a list
-                 of sentences and each sentence is a list of
-                 WordPiece tokens.
+        self.index = []
+        self.total_examples = 0
+        self.tokenizer = tokenizer
+        self.mlm_probability = mlm_probability
 
-    """
-    logger.info(f'About to create instances for {len(documents)} docs.')
+        start_index = 0
 
-    instances = []
+        with open(index_file, "r") as index:
+            for line in index.readlines():
+                file, num_examples = line.split("\t")
+                num_examples = int(num_examples.strip())
 
-    # Make sure we don't have empty docs
-    all_documents_ = [d for d in documents if d]
-    all_docs_iterable_ = all_documents_  # Hack for optional tqdm
+                self.index.append(
+                    IndexEntry(
+                        start_index,
+                        (start_index + num_examples - 1),
+                        file)
+                )
 
-    # Do some shuffle, just to make sure the dataset will vary
-    shuffle(all_documents_)
+                start_index += num_examples
+                self.total_examples += num_examples
 
-    if use_tqdm is True:
-        all_docs_iterable_ = tqdm(all_documents_, desc=tqdm_desc)
+    def __len__(self):
+        return self.total_examples
 
-    for i, document in enumerate(all_docs_iterable_):
-        instances.extend(create_from_document(
-            i, document, all_documents_, max_seq_length))
+    def __getitem__(self, index: int):
+        return self.__resolve(index)
 
-    logger.debug(f'Created {len(instances)} from document {i}')
-    logger.info(f'Generated {len(instances)} instances'
-                f'for {len(documents)} docs.')
+    def collate_batch(self, batch):
+        elem = batch[0]
 
-    shuffle(instances)  # Shuffle for non-sequential doc sentences
+        collated = {key: torch.stack([d[key] for d in batch]) for key in elem}
+        masked_inputs, mask_labels = self.mask_tokens(collated['input_ids'])
 
-    write_instances_to_file(
-        instances, max_seq_length, output_path, tokenizer)
+        collated['input_ids'] = masked_inputs
+        collated['mlm_labels'] = mask_labels
 
+        return collated
 
-def write_instances_to_file(
-    instances: List[PreTrainInstace], max_seq_length: int, output_path: str,
-        tokenizer: BertWordPieceTokenizer):
+    def mask_tokens(self, inputs: torch.Tensor):
+        """
+        Extracted from Huggingface DataCollatorForLanguageModeling
 
-    enc = tokenizer.encode_tokenized
+        Prepare masked tokens inputs/labels for masked language modeling:
+        - 80% MASK
+        - 10% random
+        - 10% original
+        """
+        if self.tokenizer.mask_token is None:
+            raise ValueError(
+                "This tokenizer does not have a mask token which is "
+                "necessary for masked language modeling. Remove the --mlm "
+                "flag if you want to use this tokenizer."
+            )
 
-    with h5py.File(output_path, mode='w') as sfile:
-        inputs_ds = sfile.create_dataset(
-            'input', shape=(len(instances), 2, max_seq_length), dtype='i')
+        labels = inputs.clone()
+        probability_matrix = torch.full(labels.shape, self.mlm_probability)
+        special_tokens_mask = [
+            self.tokenizer.get_special_tokens_mask(
+                val, already_has_special_tokens=True)
+            for val in labels.tolist()
+        ]
+        probability_matrix.masked_fill_(
+            torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0
+        )
+        if self.tokenizer._pad_token is not None:
+            padding_mask = labels.eq(self.tokenizer.pad_token_id)
+            probability_matrix.masked_fill_(padding_mask, value=0.0)
+        masked_indices = torch.bernoulli(probability_matrix).bool()
+        labels[~masked_indices] = -100  # We only compute loss on masked tokens
 
-        labels_ds = sfile.create_dataset(
-            'labels', shape=(len(instances), 1), dtype='i')
+        # 80% of the time, we replace masked input tokens with
+        # tokenizer.mask_token ([MASK])
+        indices_replaced = (
+            torch.bernoulli(
+                torch.full(labels.shape, 0.8)).bool() & masked_indices
+        )
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(
+            self.tokenizer.mask_token
+        )
 
-        for i, instance in enumerate(tqdm(instances, 'saving instances')):
-            seq_size = len(instance.sentence_pair)
+        # 10% of the time, we replace masked input tokens with random word
+        indices_random = (
+            torch.bernoulli(torch.full(labels.shape, 0.5)).bool()
+            & masked_indices
+            & ~indices_replaced
+        )
+        random_words = torch.randint(
+            len(self.tokenizer), labels.shape, dtype=torch.long
+        )
+        inputs[indices_random] = random_words[indices_random]
 
-            input_ids = np.zeros(max_seq_length)
-            segment_ids = np.zeros(max_seq_length)
+        # The rest of the time (10% of the time) we keep the masked input
+        # tokens unchanged
+        return inputs, labels
 
-            input_ids[0: seq_size] = enc(instance.sentence_pair).ids
-            segment_ids[0: seq_size] = instance.segment_ids
-            label = 1 if instance.is_next else 0
+    def __resolve(self, index: int):
+        entry = self.__find_entry(index)
+        line_in_file = (index - entry.start_index) + 1
 
-            inputs_ds[i, 0, :] = input_ids
-            inputs_ds[i, 1, :] = segment_ids
-            labels_ds[i, 0] = label
+        raw_data = linecache.getline(entry.file_location, line_in_file)
+        raw_data_parts = raw_data.strip().split("\t")
 
+        input_ids = [int(item) for item in raw_data_parts[0].split()]
+        token_type_ids = [int(item) for item in raw_data_parts[1].split()]
+        label = int(raw_data_parts[2])
 
-def create_from_document(doc_idx, doc, all_docs, max_seq_length):
-    """
-    I heavily rely on the implementation of BERT to generate training data:
-    github.com/google-research/bert/blob/master/create_pretraining_data.py
+        input_ids = torch.tensor(input_ids)
+        attention_mask = (input_ids != 0).long()
 
-    The main differences are:
-    - I do not keep short sentences with any probability
-    - The masking of tokens will be done dynamically, during training
-      (just like the experiment made in RoBERTa paper)
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": torch.tensor(token_type_ids),
+            "next_sentence_label": torch.tensor(label),
+        }
 
-    This function also assumes that all documents are tokenized
-    (WordPiece Token Strings).
-    """
-    instances = []
+    def __find_entry(self, index: int):
+        actual_entry = None
 
-    # Account for 1x [CLS] and 2x [SEP]
-    target_seq_length = max_seq_length - 3
+        for entry in self.index:
+            if index >= entry.start_index and index <= entry.end_index:
+                actual_entry = entry
+                break
 
-    # We'll use the same strategy as in the original
-    # BERT paper, creating instances with a target max length
-    # and using segments (groups of sentences) for that
-    #
-    # We create sentences pairs for next sentence prediction
-    # where 50% of times the second sequence is the real next one.
-    current_chunk = []
-    current_length = 0
+        if actual_entry is None:
+            raise IndexError(f"Could not find index {index}")
 
-    i = 0  # A reference where we stopped in the current doc.
-
-    while i < len(doc):
-        segment = doc[i]
-        current_chunk.append(segment)
-        current_length += len(segment)
-
-        if i == len(doc) - 1 or current_length >= target_seq_length:
-            if current_chunk:
-                sentence_a = []
-                sentence_b = []
-
-                sentence_a_end = randint(1, max(1, len(current_chunk) - 1))
-
-                for ai in range(sentence_a_end):
-                    sentence_a.extend(current_chunk[ai])
-
-                is_next = True
-                chance = random()
-
-                if len(all_docs) > 1 and \
-                   (len(current_chunk) == 1 or chance < 0.5):
-
-                    sentence_b_tgt_len = target_seq_length - len(sentence_a)
-
-                    # Let's get a random sentence
-                    is_next = False
-
-                    for _ in range(10):
-                        random_doc_idx = randint(0, len(all_docs) - 1)
-
-                        if random_doc_idx != doc_idx:
-                            break
-
-                    # We select the document and a random position to start
-                    # We use len(random_doc) // 2 to make room for a bugger
-                    # sentence
-                    random_doc = all_docs[random_doc_idx]
-                    random_start = randint(0, len(random_doc) // 2)
-
-                    for j in range(random_start, len(random_doc)):
-                        sentence_b.extend(random_doc[j])
-
-                        if len(sentence_b) >= sentence_b_tgt_len:
-                            break
-
-                    # We free the tokens we'll not use for this instance
-                    i -= len(current_chunk) - sentence_a_end
-                else:
-                    # It will be an actual next sentence
-                    for j in range(sentence_a_end, len(current_chunk)):
-                        sentence_b.extend(current_chunk[j])
-
-                truncate_seq_pair(sentence_a, sentence_b, target_seq_length)
-
-                assert len(sentence_a) >= 1
-                assert len(sentence_b) >= 1
-
-                final_seq = ['[CLS]'] + \
-                    sentence_a + \
-                    ['[SEP]'] + \
-                    sentence_b + \
-                    ['[SEP]']
-
-                segment_ids = [0] * (len(sentence_a) + 2)
-                segment_ids += [1] * (len(sentence_b) + 1)
-
-                instances.append(
-                    PreTrainInstace(
-                        sentence_pair=final_seq,
-                        segment_ids=segment_ids,
-                        is_next=is_next))
-
-            current_chunk = []
-            current_length = 0
-        i += 1
-    return instances
-
-
-def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens):
-    """Truncates a pair of sequences to a maximum sequence length."""
-    while True:
-        total_length = len(tokens_a) + len(tokens_b)
-        if total_length <= max_num_tokens:
-            break
-
-        trunc_tokens = tokens_a if len(tokens_a) > len(tokens_b) else tokens_b
-        assert len(trunc_tokens) >= 1
-
-        # We want to sometimes truncate from the front and sometimes from the
-        # back to add more randomness and avoid biases.
-        if random() < 0.5:
-            del trunc_tokens[0]
-        else:
-            trunc_tokens.pop()
+        return actual_entry
