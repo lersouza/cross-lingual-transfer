@@ -382,7 +382,6 @@ class NLIModel(LightningModule):
                 self.hparams.max_seq_length
             )
 
-            
             self.training_setup_performed = True
         elif stage == 'test' and not self.test_setup_performed:
             setup_lexical_for_testing(
