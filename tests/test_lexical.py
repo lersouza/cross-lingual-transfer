@@ -117,6 +117,41 @@ class SlicedEmbeddingsTest(TestCase):
         self.assertFalse(
             torch.all(trainable_original == trainable_actual).item())
 
+    def test_slice(self):
+        original = Embedding(10, 10)
+        cut = 5
+
+        sliced = SlicedEmbedding.slice(original, 5, True, False)
+
+        self.assertTrue(type(sliced) is SlicedEmbedding)
+
+        first = sliced.first_embedding
+        second = sliced.second_embedding
+
+        self.assertFalse(first.weight.requires_grad)
+        self.assertTrue(second.weight.requires_grad)
+
+        self.assertTrue(
+            torch.all(original.weight[:cut] == first.weight).item())
+
+        self.assertTrue(
+            torch.all(original.weight[cut:] == second.weight).item())
+
+    def test_slice_again(self):
+        original = Embedding(10, 10)
+        already_sliced = SlicedEmbedding.slice(original, 5, True, False)
+        slice_it_again = SlicedEmbedding.slice(already_sliced, 5, True, False)
+
+        self.assertTrue(type(slice_it_again) is SlicedEmbedding)
+        self.assertEqual(already_sliced, slice_it_again)
+
+    def test_slice_again_different_cut(self):
+        original = Embedding(10, 10)
+        already_sliced = SlicedEmbedding.slice(original, 5, True, False)
+
+        with self.assertRaises(NotImplementedError) as context:
+            SlicedEmbedding.slice(already_sliced, 6, True, False)
+
 
 class SetupLexicalForTrainingTest(TestCase):
     def test_setup_none(self):
