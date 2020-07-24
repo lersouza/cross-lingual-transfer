@@ -284,6 +284,9 @@ class NLIModel(LightningModule):
         self.train_tokenizer, self.test_tokenizer = self.__get_tokenizers()
         self.metric = Accuracy(num_classes=num_classes)
 
+        self.training_setup_performed = False
+        self.test_setup_performed = False
+
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
         outputs = self.bert(
             input_ids=input_ids,
@@ -366,7 +369,7 @@ class NLIModel(LightningModule):
             self.hparams.max_seq_length)
 
     def setup(self, stage: str):
-        if stage == 'fit':
+        if stage == 'fit' and not self.training_setup_performed:
             setup_lexical_for_training(
                 self.hparams.train_lexical_strategy,
                 self.bert,
@@ -378,7 +381,10 @@ class NLIModel(LightningModule):
                 self.hparams.data_dir,
                 self.hparams.max_seq_length
             )
-        elif stage == 'test':
+
+            
+            self.training_setup_performed = True
+        elif stage == 'test' and not self.test_setup_performed:
             setup_lexical_for_testing(
                 self.hparams.test_lexical_strategy,
                 self.bert,
@@ -392,6 +398,8 @@ class NLIModel(LightningModule):
                 self.hparams.data_dir,
                 self.hparams.max_seq_length
             )
+
+            self.test_setup_performed = True
 
     def __get_tokenizers(self):
         train_tokenizer = BertTokenizer.from_pretrained(

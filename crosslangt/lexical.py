@@ -193,6 +193,17 @@ class SlicedEmbedding(torch.nn.Module):
         - fisrt: embedding.weight[:slice_cut]
         - second: embedding.weight[slice_cut:]
         """
+        # Check whether it is already sliced
+        if type(embedding) is SlicedEmbedding:
+            # Two cases here:
+            if embedding.first_embedding.weight.shape[0] == slice_cut:
+                # - user requests the same slicing: return the original
+                return embedding
+            else:
+                # - user requests a different slicing: we throw an error
+                raise NotImplementedError('embedding is already sliced and '
+                                          'double slicing is not supported')
+
         weigths_a = embedding.weight[:slice_cut]
         weigths_b = embedding.weight[slice_cut:]
 
