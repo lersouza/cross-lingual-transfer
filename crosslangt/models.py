@@ -189,7 +189,7 @@ class QuestionAnsweringModel(LightningModule):
         )
 
     def setup(self, stage: str):
-        if stage == 'fit':
+        if stage == 'fit' and self.train_dataset is None:
             setup_lexical_for_training(
                 self.hparams.train_lexical_strategy,
                 self.bert,
@@ -203,7 +203,7 @@ class QuestionAnsweringModel(LightningModule):
             )
             self.train_dataset = train_data['dataset']
 
-        elif stage == 'test':
+        elif stage == 'test' and self.eval_dataset is None:
             setup_lexical_for_testing(
                 self.hparams.test_lexical_strategy,
                 self.bert,
