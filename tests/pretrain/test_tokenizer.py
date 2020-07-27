@@ -31,6 +31,6 @@ class TrainTokenizerTestCase(TestCase):
 
             tokenizer_mock.train.assert_called_with(
                 files,
-                initial_alphabet=initial_vocab,
+                special_tokens=initial_vocab,
                 vocab_size=30_000)
             tokenizer_mock.save.assert_called_with('/tmp/my_tokenizer')

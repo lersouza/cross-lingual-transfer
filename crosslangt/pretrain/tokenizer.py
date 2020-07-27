@@ -38,7 +38,7 @@ def train_tokenizer(files: List[str],
 
     initial_alphabet = get_bert_initial_alphabet()
 
-    tokenizer.train(files, initial_alphabet=initial_alphabet,
+    tokenizer.train(files, special_tokens=initial_alphabet,
                     vocab_size=vocab_size)
 
     tokenizer.save(tokenizer_path)
