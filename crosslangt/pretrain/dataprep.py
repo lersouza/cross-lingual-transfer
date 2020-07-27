@@ -261,9 +261,13 @@ def generate_examples(input_files, tokenizer_name, output, max_seq_length,
     Generate training examples based on the `input_files`.
     """
     seed_everything(random_seed)  # Make it reproducible
+    os.makedirs(output, exist_ok=True)
 
     with open(os.path.join(output, f'{files_type}_index'), 'w+') as index:
         for file in input_files:
+            if type(file) is str:
+                file = open(file)
+
             with file:
                 gen, qty = generate_examples_from_file(
                     file, tokenizer_name, output, max_seq_length)
