@@ -232,8 +232,9 @@ def generate_examples_from_file(file, tokenizer_name, output, max_seq_length):
     tokenizer = BertTokenizerFast.from_pretrained(tokenizer_name)
 
     all_lines = file.readlines()
+    file_name = os.path.split(file.name)[-1]  # file name only
 
-    for line in tqdm(all_lines, f'loading {file.name}'):
+    for line in tqdm(all_lines, f'loading {file_name}'):
         line = line.strip()
 
         if not line:  # End of document
@@ -246,7 +247,7 @@ def generate_examples_from_file(file, tokenizer_name, output, max_seq_length):
         if encoded:
             documents[-1].append(encoded)
 
-    output_path = os.path.join(output, f'{file.name}.examples')
+    output_path = os.path.join(output, f'{file_name}.examples')
 
     gen_file, num_examples = create_training_intances(
         documents, max_seq_length, output_path, tokenizer,
