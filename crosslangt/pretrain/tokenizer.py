@@ -44,7 +44,7 @@ def train_tokenizer(files: List[str],
     tokenizer.save(tokenizer_path)
 
     # Creating a default config for the tokenizer
-    config = {'do_lower_case': lowercase}
+    config = {'do_lower_case': lowercase, 'strip_accents': strip_accents}
     config_file_path = os.path.join(tokenizer_path, TOKENIZER_CONFIG_FILE)
 
     with open(config_file_path, 'w+') as config_file:
