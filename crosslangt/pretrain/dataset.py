@@ -1,10 +1,11 @@
 import linecache
+import math
 import os
-from typing import Tuple
 import torch
 
 from dataclasses import dataclass
-from torch.utils.data import Dataset
+from itertools import chain
+from torch.utils.data.dataset import IterableDataset
 from transformers.tokenization_bert import BertTokenizer
 
 
@@ -15,38 +16,56 @@ class IndexEntry:
     file_location: str
 
 
-class LexicalTrainDataset(Dataset):
+class LexicalTrainDataset(IterableDataset):
     def __init__(self, index_file: str, tokenizer: BertTokenizer,
-                 mlm_probability: float = 0.15):
+                 mlm_probability: float = 0.15, max_examples: int = None):
+
         assert os.path.exists(index_file)
 
         self.index = []
         self.total_examples = 0
         self.tokenizer = tokenizer
         self.mlm_probability = mlm_probability
+        self.max_examples = max_examples
 
         start_index = 0
 
         with open(index_file, "r") as index:
             for line in index.readlines():
-                file, num_examples = line.split("\t")
+                file_name, num_examples = line.split("\t")
                 num_examples = int(num_examples.strip())
 
                 self.index.append(
                     IndexEntry(
                         start_index,
                         (start_index + num_examples - 1),
-                        file)
+                        file_name.strip())
                 )
 
                 start_index += num_examples
                 self.total_examples += num_examples
 
-    def __len__(self):
-        return self.total_examples
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
 
-    def __getitem__(self, index: int):
-        return self.__resolve(index)
+        if worker_info is None:
+            # Single worker... we process all entries sequentially
+            return chain.from_iterable(map(self.__process_entry, self.index))
+        else:
+            # Multiple workers in context
+            # Well partition the index entries per worker.
+
+            num_workers = worker_info.num_workers
+            per_worker = int(math.ceil(len(self.index) / float(num_workers)))
+            worker_id = worker_info.id
+
+            start_entry = worker_id * per_worker
+            end_entry = min(start_entry + per_worker, len(self.index))
+
+            worker_subset = self.index[start_entry:end_entry]
+
+            return chain.from_iterable(
+                map(self.__process_entry, worker_subset))
 
     def collate_batch(self, batch):
         elem = batch[0]
@@ -116,19 +135,20 @@ class LexicalTrainDataset(Dataset):
         # tokens unchanged
         return inputs, labels
 
-    def __resolve(self, index: int):
-        entry = self.__find_entry(index)
-        line_in_file = (index - entry.start_index) + 1
+    def __process_entry(self, index_entry: IndexEntry):
+        with open(index_entry.file_location, 'r', encoding='utf-8') as dfile:
+            for line in dfile:
+                yield self.__convert_dataset_file_entry(line)
 
-        raw_data = linecache.getline(entry.file_location, line_in_file)
-        raw_data_parts = raw_data.strip().split("\t")
+    def __convert_dataset_file_entry(self, dataset_file_entry: str):
+        raw_data_parts = dataset_file_entry.strip().split("\t")
 
         input_ids = [int(item) for item in raw_data_parts[0].split()]
         token_type_ids = [int(item) for item in raw_data_parts[1].split()]
         label = int(raw_data_parts[2])
 
         input_ids = torch.tensor(input_ids)
-        attention_mask = (input_ids != 0).long()
+        attention_mask = (input_ids != self.tokenizer.pad_token_id).long()
 
         return {
             "input_ids": input_ids,
@@ -136,16 +156,3 @@ class LexicalTrainDataset(Dataset):
             "token_type_ids": torch.tensor(token_type_ids),
             "next_sentence_label": torch.tensor(label),
         }
-
-    def __find_entry(self, index: int):
-        actual_entry = None
-
-        for entry in self.index:
-            if index >= entry.start_index and index <= entry.end_index:
-                actual_entry = entry
-                break
-
-        if actual_entry is None:
-            raise IndexError(f"Could not find index {index}")
-
-        return actual_entry
