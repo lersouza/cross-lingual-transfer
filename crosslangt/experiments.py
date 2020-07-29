@@ -131,7 +131,10 @@ def test_nli_checkpoint(checkpoint_path: str,
                         test_lexical_path: str = None,
                         test_tokenizer_name: str = None,
                         prepare_data: bool = True,
-                        gpus: int = 1):
+                        gpus: int = 1,
+                        seed: int = 123):
+
+    seed_everything(seed)
 
     model = NLIModel.load_from_checkpoint(
             checkpoint_path,
