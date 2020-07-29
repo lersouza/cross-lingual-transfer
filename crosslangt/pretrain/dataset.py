@@ -142,6 +142,9 @@ class LexicalTrainDataset(IterableDataset):
                     yield self.__convert_dataset_file_entry(line)
 
     def __proceed(self, index_entry: IndexEntry, actual_file_line_number: int):
+        if self.max_examples is None:
+            return True  # No limits
+
         global_line_number = index_entry.start_index + actual_file_line_number
         return global_line_number < self.max_examples
 
