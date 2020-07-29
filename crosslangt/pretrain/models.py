@@ -14,7 +14,9 @@ class LexicalTrainingModel(LightningModule):
     def __init__(self,
                  pretrained_model,
                  data_dir: str,
-                 batch_size: int) -> None:
+                 batch_size: int,
+                 max_train_examples: int = None,
+                 max_eval_examples: int = None) -> None:
         super(LexicalTrainingModel, self).__init__()
 
         self.save_hyperparameters()
@@ -83,25 +85,28 @@ class LexicalTrainingModel(LightningModule):
         return DataLoader(
             self.train_dataset,
             batch_size=self.hparams.batch_size,
-            shuffle=True,
-            num_workers=8,
+            num_workers=10,
             collate_fn=self.train_dataset.collate_batch)
 
     def val_dataloader(self):
         return DataLoader(
             self.eval_dataset,
             batch_size=self.hparams.batch_size,
-            shuffle=False,
-            num_workers=8,
+            num_workers=1,
             collate_fn=self.eval_dataset.collate_batch)
 
     def setup(self, stage: str):
-        if stage == 'fit':
+        if stage == 'fit' and self.train_dataset is None:
             tindex = os.path.join(self.hparams.data_dir, 'train_index')
             eindex = os.path.join(self.hparams.data_dir, 'eval_index')
 
-            self.train_dataset = LexicalTrainDataset(tindex, self.tokenizer)
-            self.eval_dataset = LexicalTrainDataset(eindex, self.tokenizer)
+            self.train_dataset = LexicalTrainDataset(
+                tindex, self.tokenizer,
+                max_examples=self.hparams.max_train_examples)
+
+            self.eval_dataset = LexicalTrainDataset(
+                eindex, self.tokenizer,
+                max_examples=self.hparams.max_eval_examples)
         else:
             tindex = os.path.join(self.hparams.data_dir, 'test_index')
             self.test_dataset = LexicalTrainDataset(tindex, self.tokenizer)

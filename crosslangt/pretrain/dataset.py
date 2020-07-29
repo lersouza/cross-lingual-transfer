@@ -137,8 +137,13 @@ class LexicalTrainDataset(IterableDataset):
 
     def __process_entry(self, index_entry: IndexEntry):
         with open(index_entry.file_location, 'r', encoding='utf-8') as dfile:
-            for line in dfile:
-                yield self.__convert_dataset_file_entry(line)
+            for line_num, line in enumerate(dfile):
+                if self.__proceed(index_entry, line_num) is True:
+                    yield self.__convert_dataset_file_entry(line)
+
+    def __proceed(self, index_entry: IndexEntry, actual_file_line_number: int):
+        global_line_number = index_entry.start_index + actual_file_line_number
+        return global_line_number < self.max_examples
 
     def __convert_dataset_file_entry(self, dataset_file_entry: str):
         raw_data_parts = dataset_file_entry.strip().split("\t")
