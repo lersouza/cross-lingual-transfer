@@ -111,6 +111,15 @@ class LexicalTrainingModel(LightningModule):
             self.eval_dataset = LexicalTrainDataset(
                 eindex, self.tokenizer,
                 max_examples=self.hparams.max_eval_examples)
+
+            self.__setup_lexical_for_training()
         else:
             tindex = os.path.join(self.hparams.data_dir, 'test_index')
             self.test_dataset = LexicalTrainDataset(tindex, self.tokenizer)
+
+    def __setup_lexical_for_training(self):
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # Train Word Embeddings Only
+        self.bert.get_input_embeddings().weight.requires_grad = True
