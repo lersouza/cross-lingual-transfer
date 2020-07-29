@@ -3,7 +3,6 @@ import os
 import torch
 from pytorch_lightning import LightningModule
 from torch.optim import Adam
-from torch.serialization import validate_cuda_device
 from torch.utils.data.dataloader import DataLoader
 from transformers import BertForPreTraining, BertTokenizer
 
@@ -30,16 +29,18 @@ class LexicalTrainingModel(LightningModule):
         self.eval_dataset = None
         self.test_dataset = None
 
-    def forward(self, input_ids, attention_mask, token_type_ids,
-                masked_lm_labels=None, next_sentence_label=None):
+    def forward(self,
+                input_ids,
+                attention_mask,
+                token_type_ids,
+                masked_lm_labels=None,
+                next_sentence_label=None):
 
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            masked_lm_labels=masked_lm_labels,
-            next_sentence_label=next_sentence_label
-        )
+        outputs = self.bert(input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            masked_lm_labels=masked_lm_labels,
+                            next_sentence_label=next_sentence_label)
 
         return outputs
 
@@ -76,30 +77,26 @@ class LexicalTrainingModel(LightningModule):
         masked_lm_labels = batch['mlm_labels']
         next_sentence_label = batch['next_sentence_label']
 
-        outputs = self(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            masked_lm_labels=masked_lm_labels,
-            next_sentence_label=next_sentence_label
-        )
+        outputs = self(input_ids=input_ids,
+                       attention_mask=attention_mask,
+                       token_type_ids=token_type_ids,
+                       masked_lm_labels=masked_lm_labels,
+                       next_sentence_label=next_sentence_label)
         loss = outputs[0]
 
         return loss
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.hparams.batch_size,
-            num_workers=10,
-            collate_fn=self.train_dataset.collate_batch)
+        return DataLoader(self.train_dataset,
+                          batch_size=self.hparams.batch_size,
+                          num_workers=10,
+                          collate_fn=self.train_dataset.collate_batch)
 
     def val_dataloader(self):
-        return DataLoader(
-            self.eval_dataset,
-            batch_size=self.hparams.batch_size,
-            num_workers=1,
-            collate_fn=self.eval_dataset.collate_batch)
+        return DataLoader(self.eval_dataset,
+                          batch_size=self.hparams.batch_size,
+                          num_workers=1,
+                          collate_fn=self.eval_dataset.collate_batch)
 
     def setup(self, stage: str):
         if stage == 'fit' and self.train_dataset is None:
@@ -107,11 +104,13 @@ class LexicalTrainingModel(LightningModule):
             eindex = os.path.join(self.hparams.data_dir, 'eval_index')
 
             self.train_dataset = LexicalTrainDataset(
-                tindex, self.tokenizer,
+                tindex,
+                self.tokenizer,
                 max_examples=self.hparams.max_train_examples)
 
             self.eval_dataset = LexicalTrainDataset(
-                eindex, self.tokenizer,
+                eindex,
+                self.tokenizer,
                 max_examples=self.hparams.max_eval_examples)
 
             self.__setup_lexical_for_training()
