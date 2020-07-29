@@ -24,6 +24,8 @@ class LexicalTrainingModel(LightningModule):
         self.bert = BertForPreTraining.from_pretrained(pretrained_model)
         self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
 
+        self.__setup_lexical_for_training()
+
         self.train_dataset = None
         self.eval_dataset = None
         self.test_dataset = None
