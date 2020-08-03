@@ -119,8 +119,19 @@ class LexicalTrainingModel(LightningModule):
             self.test_dataset = LexicalTrainDataset(tindex, self.tokenizer)
 
     def __setup_lexical_for_training(self):
+        # We freeze all parameters in this model.
+        # Then, we unlock the ones we want.
         for param in self.parameters():
             param.requires_grad = False
 
         # Train Word Embeddings Only
-        self.bert.get_input_embeddings().weight.requires_grad = True
+        input_embeddings = self.bert.get_input_embeddings()
+
+        for parameter in input_embeddings.parameters():
+            parameter.requires_grad = True
+
+        # We also train the HEAD (Output Embeddings, since they are tied)
+        output_embeddings = self.bert.get_output_embeddings()
+
+        for parameter in output_embeddings.parameters():
+            parameter.requires_grad = True
