@@ -229,10 +229,11 @@ def extract_features(data_file_path: str, split: str, max_seq_length: int,
     return features
 
 
-def load_nli_dataset(dataset: str, split: str, data_dir: str,
-                     max_seq_length: int):
-    dataset_filename = f'nli-{dataset}-{split}-{max_seq_length}.dataset'
-    dataset_filepath = os.path.join(data_dir, dataset_filename)
+def load_nli_dataset(data_dir: str, dataset: str, split: str,
+                     max_seq_length: int, features_key: str = ''):
+
+    dataset_filepath = get_features_file(data_dir, dataset, split,
+                                         max_seq_length, features_key)
 
     if not os.path.exists(dataset_filepath):
         logger.error(f'Dataset {dataset_filepath} not found. '

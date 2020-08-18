@@ -1,4 +1,5 @@
 import os
+from typing import Tuple
 
 import torch
 from pytorch_lightning import LightningModule
@@ -18,15 +19,12 @@ class NLIModel(LightningModule):
                  pretrained_model: str,
                  num_classes: int,
                  train_lexical_strategy: str,
-                 test_lexical_strategy: str,
                  train_dataset: str,
-                 test_dataset: str,
+                 eval_dataset: str,
                  data_dir: str,
                  batch_size: int,
                  max_seq_length: int,
-                 test_lexical_path: str = None,
                  tokenizer_name: str = None,
-                 test_tokenizer_name: str = None,
                  **kwargs) -> None:
 
         super(NLIModel, self).__init__()
@@ -39,11 +37,15 @@ class NLIModel(LightningModule):
         self.bert = BertForSequenceClassification.from_pretrained(
             pretrained_model, config=config)
 
-        self.train_tokenizer, self.test_tokenizer = self.__get_tokenizers()
+        self.train_tokenizer = BertTokenizer.from_pretrained(
+            self.hparams.tokenizer_name or self.hparams.pretrained_model)
+
         self.metric = Accuracy(num_classes=num_classes)
 
         self.training_setup_performed = False
         self.test_setup_performed = False
+
+        self.__set_feature_keys()
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
         outputs = self.bert(input_ids=input_ids,
@@ -57,41 +59,60 @@ class NLIModel(LightningModule):
         return Adam(self.bert.parameters(), lr=2e-5)
 
     def training_step(self, batch, batch_idx):
-        input_ids, attention_mask, token_type_ids, labels = \
-            batch['input_ids'], batch['attention_mask'], \
-            batch['token_type_ids'], batch['label']
-
-        outputs = self(input_ids, attention_mask, token_type_ids, labels)
-        loss = outputs[0]
-        logits = outputs[1]
-        predicted = torch.argmax(logits, dim=-1)
-
-        accuracy = self.metric(predicted, labels)
+        loss, accuracy = self._eval_step(batch, batch_idx)
 
         logs = {'train_loss': loss, 'train_acc': accuracy}
         tensor_bar = {'train_acc': accuracy}
 
         return {'loss': loss, 'log': logs, 'progress_bar': tensor_bar}
 
+    def validation_step(self, batch, batch_idx):
+        loss, accuracy = self._eval_step(batch, batch_idx)
+
+        logs = {'val_acc': accuracy, 'val_loss': loss}
+        return {'val_loss': loss, 'val_acc': accuracy, 'log': logs,
+                'progress_bar': logs}
+
+    def validation_epoch_end(self, outputs):
+        return self._eval_epoch_end(outputs, 'val_')
+
     def test_step(self, batch, batch_idx):
+        loss, accuracy = self._eval_step(batch, batch_idx)
+
+        logs = {'test_acc': accuracy, 'test_loss': loss}
+        return {'test_loss': loss, 'test_acc': accuracy, 'log': logs,
+                'progress_bar': logs}
+
+    def test_epoch_end(self, outputs):
+        return self._eval_epoch_end(outputs, 'test_')
+
+    def _eval_step(self, batch, batch_idx):
         input_ids, attention_mask, token_type_ids, labels = \
             batch['input_ids'], batch['attention_mask'], \
             batch['token_type_ids'], batch['label']
 
-        outputs = self(input_ids, attention_mask, token_type_ids)
-        logits = outputs[0]
+        outputs = self(input_ids, attention_mask, token_type_ids, labels)
+
+        loss = outputs[0]
+        logits = outputs[1]
         predicted = torch.argmax(logits, dim=-1)
 
         accuracy = self.metric(predicted, labels)
 
-        logs = {'test_acc': accuracy}
-        return {'test_acc': accuracy, 'log': logs, 'progress_bar': logs}
+        return loss, accuracy
 
-    def test_epoch_end(self, outputs):
-        accuracies = torch.stack([o['test_acc'] for o in outputs])
+    def _eval_epoch_end(self, outputs, prefix):
+        acc_key = f'{prefix}acc'
+        loss_key = f'{prefix}loss'
+
+        accuracies = torch.stack([o[acc_key] for o in outputs])
+        losses = torch.stack([o[loss_key] for o in outputs])
+
         mean_accuracy = accuracies.mean()
+        mean_loss = losses.mean()
 
-        return {'test_avg_accuracy': mean_accuracy}
+        return {f'{prefix}avg_accuracy': mean_accuracy,
+                f'{prefix}avg_loss': mean_loss}
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_dataset,
@@ -99,7 +120,7 @@ class NLIModel(LightningModule):
                           shuffle=True,
                           num_workers=8)
 
-    def test_dataloader(self):
+    def val_dataloader(self):
         return DataLoader(self.test_dataset,
                           self.hparams.batch_size,
                           shuffle=False,
@@ -111,7 +132,7 @@ class NLIModel(LightningModule):
                             data_dir=self.hparams.data_dir,
                             tokenizer=self.train_tokenizer,
                             max_seq_length=self.hparams.max_seq_length,
-                            features_key=self.hparams.pretrained_model,
+                            features_key=self.train_key,
                             force=True)
 
         prepare_nli_dataset(dataset=self.hparams.test_dataset,
@@ -119,39 +140,30 @@ class NLIModel(LightningModule):
                             data_dir=self.hparams.data_dir,
                             tokenizer=self.test_tokenizer,
                             max_seq_length=self.hparams.max_seq_length,
-                            features_key=self.hparams.pretrained_model,
+                            features_key=self.eval_key,
                             force=True)
 
     def setup(self, stage: str):
-        if stage == 'fit' and not self.training_setup_performed:
-            setup_lexical_for_training(self.hparams.train_lexical_strategy,
-                                       self.bert, self.train_tokenizer)
+        setup_lexical_for_training(self.hparams.train_lexical_strategy,
+                                   self.bert, self.train_tokenizer)
 
-            self.train_dataset = load_nli_dataset(self.hparams.train_dataset,
-                                                  'train',
-                                                  self.hparams.data_dir,
-                                                  self.hparams.max_seq_length)
+        self.train_dataset = load_nli_dataset(
+            self.hparams.data_dir,
+            self.hparams.train_dataset,
+            'train',
+            self.hparams.max_seq_length,
+            self.train_key)
 
-            self.training_setup_performed = True
-        elif stage == 'test' and not self.test_setup_performed:
-            setup_lexical_for_testing(self.hparams.test_lexical_strategy,
-                                      self.bert, self.test_tokenizer,
-                                      self.hparams.test_lexical_path)
+        self.eval_dataset = load_nli_dataset(
+            self.hparams.data_dir,
+            self.hparams.test_dataset,
+            'eval',
+            self.hparams.max_seq_length,
+            self.train_key)
 
-            self.test_dataset = load_nli_dataset(self.hparams.test_dataset,
-                                                 'eval', self.hparams.data_dir,
-                                                 self.hparams.max_seq_length)
+    def __set_feature_keys(self, key_type):
+        model_name = self.hparams.pretrained_model.split('/').pop()
+        tokenizer_name = self.hparams.tokenizer_name or ''
+        tokenizer_name = tokenizer_name.split('/').pop()
 
-            self.test_setup_performed = True
-
-    def __get_tokenizers(self):
-        train_tokenizer = BertTokenizer.from_pretrained(
-            self.hparams.tokenizer_name or self.hparams.pretrained_model)
-
-        test_tokenizer = train_tokenizer  # By default, they are the same.
-
-        if self.hparams.test_tokenizer_name is not None:
-            test_tokenizer = BertTokenizer.from_pretrained(
-                self.hparams.test_tokenizer_name)
-
-        return (train_tokenizer, test_tokenizer)
+        self.train_key = f'{model_name}.{tokenizer_name}'

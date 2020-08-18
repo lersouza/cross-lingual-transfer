@@ -1,3 +1,8 @@
+from crosslangt.lexical import setup_lexical_for_testing
+from torch.utils import data
+from torch.utils.data.dataloader import DataLoader
+from transformers.tokenization_utils import PreTrainedTokenizer
+from crosslangt.nli.dataprep_nli import load_nli_dataset, prepare_nli_dataset
 import re
 import os
 from pathlib import Path
@@ -49,10 +54,8 @@ def run_nli_training(experiment_name: str,
                      pretrained_model: str,
                      num_classes: int,
                      train_lexical_strategy: str,
-                     test_lexical_strategy: str,
-                     test_lexical_path: str,
                      train_dataset: str,
-                     test_dataset: str,
+                     eval_dataset: str,
                      batch_size: int,
                      max_seq_length: int,
                      max_epochs: int,
@@ -61,8 +64,7 @@ def run_nli_training(experiment_name: str,
                      tpu_cores: int = None,
                      output_path: str = DEFAULT_EXPERIMENT_LOCATION,
                      seed: int = 123,
-                     train_tokenizer_name: str = None,
-                     test_tokenizer_name: str = None):
+                     tokenizer_name: str = None):
 
     seed_everything(seed)
 
@@ -79,15 +81,12 @@ def run_nli_training(experiment_name: str,
         model = NLIModel(pretrained_model=pretrained_model,
                          num_classes=num_classes,
                          train_lexical_strategy=train_lexical_strategy,
-                         test_lexical_strategy=test_lexical_strategy,
                          train_dataset=train_dataset,
-                         test_dataset=test_dataset,
+                         eval_dataset=eval_dataset,
                          data_dir=DEFAULT_DATA_DIR,
                          batch_size=batch_size,
                          max_seq_length=max_seq_length,
-                         tokenizer_name=train_tokenizer_name,
-                         test_lexical_path=test_lexical_path,
-                         test_tokenizer_name=test_tokenizer_name)
+                         tokenizer_name=tokenizer_name)
 
     model_checkpoint = get_model_checkpoint_callback(base_exp_path,
                                                      NLI_CHECKPOINT_FORMAT)
@@ -101,13 +100,14 @@ def run_nli_training(experiment_name: str,
                       deterministic=True)
 
     trainer.fit(model)
-    trainer.test(model)
 
     return trainer, model
 
 
-def test_nli_checkpoint(checkpoint_path: str,
+def test_nli_checkpoint(test_experiment_key: str,
+                        checkpoint_path: str,
                         test_dataset: str,
+                        max_seq_length: int,
                         test_lexical_strategy: str,
                         test_lexical_path: str = None,
                         test_tokenizer_name: str = None,
@@ -118,18 +118,32 @@ def test_nli_checkpoint(checkpoint_path: str,
 
     seed_everything(seed)
 
-    model = NLIModel.load_from_checkpoint(
-            checkpoint_path,
-            test_dataset=test_dataset,
-            test_lexical_strategy=test_lexical_strategy,
-            data_dir=DEFAULT_DATA_DIR,
-            test_lexical_path=test_lexical_path,
-            test_tokenizer_name=test_tokenizer_name)
+    model = NLIModel.load_from_checkpoint(checkpoint_path)
+    tokenizer = PreTrainedTokenizer.from_pretrained(
+        test_tokenizer_name or model.hparams.pretrained_model)
 
     if prepare_data is True:
-        model.prepare_data()
+
+        prepare_nli_dataset(test_dataset,
+                            'eval',
+                            DEFAULT_DATA_DIR,
+                            tokenizer,
+                            max_seq_length,
+                            test_experiment_key)
+
+    dataset = load_nli_dataset(DEFAULT_DATA_DIR,
+                               test_dataset,
+                               'eval',
+                               max_seq_length,
+                               test_experiment_key)
+
+    data_loader = DataLoader(dataset, shuffle=False, num_workers=8)
+
+    # Apply the strategy for testing
+    setup_lexical_for_testing(test_lexical_strategy, model.bert, tokenizer,
+                              test_lexical_path)
 
     trainer = Trainer(gpus=gpus, tpu_cores=tpu_cores, deterministic=True)
-    trainer.test(model)
+    trainer.test(model, data_loader)
 
     return trainer, model
