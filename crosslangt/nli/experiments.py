@@ -63,6 +63,7 @@ def run_nli_training(experiment_name: str,
                      gpus: int = 0,
                      tpu_cores: int = None,
                      output_path: str = DEFAULT_EXPERIMENT_LOCATION,
+                     precision: int = 32,
                      seed: int = 123,
                      tokenizer_name: str = None):
 
@@ -97,6 +98,7 @@ def run_nli_training(experiment_name: str,
                       checkpoint_callback=model_checkpoint,
                       accumulate_grad_batches=accumulate_grad,
                       max_epochs=max_epochs,
+                      precision=precision,
                       deterministic=True)
 
     trainer.fit(model)
@@ -114,6 +116,7 @@ def test_nli_checkpoint(test_experiment_key: str,
                         prepare_data: bool = True,
                         gpus: int = 1,
                         tpu_cores: int = None,
+                        precision: int = 32,
                         seed: int = 123):
 
     seed_everything(seed)
@@ -143,7 +146,11 @@ def test_nli_checkpoint(test_experiment_key: str,
     setup_lexical_for_testing(test_lexical_strategy, model.bert, tokenizer,
                               test_lexical_path)
 
-    trainer = Trainer(gpus=gpus, tpu_cores=tpu_cores, deterministic=True)
+    trainer = Trainer(gpus=gpus,
+                      tpu_cores=tpu_cores,
+                      precision=precision,
+                      deterministic=True)
+
     trainer.test(model, data_loader)
 
     return trainer, model
