@@ -6,12 +6,11 @@ from pytorch_lightning import LightningModule
 from pytorch_lightning.metrics import Accuracy
 from torch.optim import Adam
 from torch.utils.data.dataloader import DataLoader
-from transformers import (BertConfig, BertForSequenceClassification,
-                          BertTokenizer)
+from transformers import (AutoConfig, AutoModelForSequenceClassification,
+                          AutoTokenizer)
 
 from crosslangt.nli import (load_nli_dataset, prepare_nli_dataset)
-from crosslangt.lexical import (setup_lexical_for_testing,
-                                setup_lexical_for_training)
+from crosslangt.lexical import setup_lexical_for_training
 
 
 class NLIModel(LightningModule):
@@ -31,35 +30,27 @@ class NLIModel(LightningModule):
 
         self.save_hyperparameters()
 
-        config = BertConfig.from_pretrained(pretrained_model,
-                                            num_labels=num_classes)
+        self.config = AutoConfig.from_pretrained(pretrained_model,
+                                                 num_labels=num_classes)
 
-        self.bert = BertForSequenceClassification.from_pretrained(
-            pretrained_model, config=config)
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            pretrained_model, config=self.config)
 
-        self.train_tokenizer = BertTokenizer.from_pretrained(
+        self.tokenizer = AutoTokenizer.from_pretrained(
             self.hparams.tokenizer_name or self.hparams.pretrained_model)
 
         self.metric = Accuracy(num_classes=num_classes)
 
-        self.training_setup_performed = False
-        self.test_setup_performed = False
-
         self.__set_feature_keys()
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        outputs = self.bert(input_ids=input_ids,
-                            attention_mask=attention_mask,
-                            token_type_ids=token_type_ids,
-                            labels=labels)
-
-        return outputs
+    def forward(self, **inputs):
+        return self.model(**inputs)
 
     def configure_optimizers(self):
         return Adam(self.bert.parameters(), lr=2e-5)
 
     def training_step(self, batch, batch_idx):
-        loss, accuracy = self._eval_step(batch, batch_idx)
+        loss, accuracy = self._run_step(batch, batch_idx)
 
         logs = {'train_loss': loss, 'train_acc': accuracy}
         tensor_bar = {'train_acc': accuracy}
@@ -67,7 +58,7 @@ class NLIModel(LightningModule):
         return {'loss': loss, 'log': logs, 'progress_bar': tensor_bar}
 
     def validation_step(self, batch, batch_idx):
-        loss, accuracy = self._eval_step(batch, batch_idx)
+        loss, accuracy = self._run_step(batch, batch_idx)
 
         logs = {'val_acc': accuracy, 'val_loss': loss}
         return {'val_loss': loss, 'val_acc': accuracy, 'log': logs,
@@ -77,7 +68,7 @@ class NLIModel(LightningModule):
         return self._eval_epoch_end(outputs, 'val_')
 
     def test_step(self, batch, batch_idx):
-        loss, accuracy = self._eval_step(batch, batch_idx)
+        loss, accuracy = self._run_step(batch, batch_idx)
 
         logs = {'test_acc': accuracy, 'test_loss': loss}
         return {'test_loss': loss, 'test_acc': accuracy, 'log': logs,
@@ -86,18 +77,22 @@ class NLIModel(LightningModule):
     def test_epoch_end(self, outputs):
         return self._eval_epoch_end(outputs, 'test_')
 
-    def _eval_step(self, batch, batch_idx):
-        input_ids, attention_mask, token_type_ids, labels = \
-            batch['input_ids'], batch['attention_mask'], \
-            batch['token_type_ids'], batch['label']
+    def _run_step(self, batch, batch_idx):
+        inputs = {}
 
-        outputs = self(input_ids, attention_mask, token_type_ids, labels)
+        inputs['input_ids'] = batch['input_ids']
+        inputs['attention_mask'] = batch['attention_mask']
+        inputs['labels'] = batch['label']
 
-        loss = outputs[0]
-        logits = outputs[1]
+        if self.config.model_type in ['bert', 'xlnet', 'albert']:
+            inputs['token_type_ids'] = batch['token_type_ids']
+
+        outputs = self(**inputs)
+
+        loss, logits = outputs[:2]
         predicted = torch.argmax(logits, dim=-1)
 
-        accuracy = self.metric(predicted, labels)
+        accuracy = self.metric(predicted, batch['label'])
 
         return loss, accuracy
 
@@ -121,7 +116,7 @@ class NLIModel(LightningModule):
                           num_workers=8)
 
     def val_dataloader(self):
-        return DataLoader(self.test_dataset,
+        return DataLoader(self.eval_dataset,
                           self.hparams.batch_size,
                           shuffle=False,
                           num_workers=8)
@@ -130,22 +125,22 @@ class NLIModel(LightningModule):
         prepare_nli_dataset(dataset=self.hparams.train_dataset,
                             split='train',
                             data_dir=self.hparams.data_dir,
-                            tokenizer=self.train_tokenizer,
+                            tokenizer=self.tokenizer,
                             max_seq_length=self.hparams.max_seq_length,
                             features_key=self.train_key,
                             force=True)
 
-        prepare_nli_dataset(dataset=self.hparams.test_dataset,
+        prepare_nli_dataset(dataset=self.hparams.eval_dataset,
                             split='eval',
                             data_dir=self.hparams.data_dir,
-                            tokenizer=self.test_tokenizer,
+                            tokenizer=self.tokenizer,
                             max_seq_length=self.hparams.max_seq_length,
-                            features_key=self.eval_key,
+                            features_key=self.train_key,
                             force=True)
 
     def setup(self, stage: str):
         setup_lexical_for_training(self.hparams.train_lexical_strategy,
-                                   self.bert, self.train_tokenizer)
+                                   self.bert, self.tokenizer)
 
         self.train_dataset = load_nli_dataset(
             self.hparams.data_dir,
@@ -156,7 +151,7 @@ class NLIModel(LightningModule):
 
         self.eval_dataset = load_nli_dataset(
             self.hparams.data_dir,
-            self.hparams.test_dataset,
+            self.hparams.eval_dataset,
             'eval',
             self.hparams.max_seq_length,
             self.train_key)
