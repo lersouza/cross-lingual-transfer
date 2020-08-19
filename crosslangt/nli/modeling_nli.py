@@ -47,7 +47,7 @@ class NLIFinetuneModel(LightningModule):
         return self.model(**inputs)
 
     def configure_optimizers(self):
-        return Adam(self.bert.parameters(), lr=2e-5)
+        return Adam(self.parameters(), lr=2e-5)
 
     def training_step(self, batch, batch_idx):
         loss, accuracy = self._run_step(batch, batch_idx)
