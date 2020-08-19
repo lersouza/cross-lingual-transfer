@@ -8,11 +8,11 @@ from torch.utils.data import Dataset
 
 @dataclass
 class NLIExample():
+    pairID: str
+    label: List[int]
     input_ids: List[int]
     attention_mask: List[int]
-    token_type_ids: List[int]
-    label: List[int]
-    pairID: str
+    token_type_ids: List[int] = None
 
 
 class NLIDataset(Dataset):
