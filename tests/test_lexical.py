@@ -1,7 +1,7 @@
 import torch
 
 from torch.nn import Embedding
-from transformers import BertModel, BertConfig, BertTokenizer
+from transformers import BertModel, BertTokenizer
 
 from crosslangt.lexical import (SlicedEmbedding, setup_lexical_for_testing,
                                 setup_lexical_for_training)
@@ -233,7 +233,7 @@ class SetupLexicalForTestingTest(TestCase):
         self.assertTrue(
             torch.all(new_lexical.weight == target_emb.weight).item())
 
-    @patch('crosslangt.lexical.BertTokenizer.all_special_ids', [0])
+    @patch('crosslangt.lexical.PreTrainedTokenizer.all_special_ids', [0])
     def test_setup_target_lexical_special_original(self):
         model = BertModel.from_pretrained('bert-base-cased')
         tokenizer = BertTokenizer.from_pretrained('bert-base-cased')

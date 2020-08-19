@@ -3,7 +3,8 @@ import torch
 
 from torch import Tensor
 from torch.nn.modules.sparse import Embedding
-from transformers import BertModel, BertTokenizer
+from transformers import PreTrainedTokenizer, PreTrainedModel
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,8 @@ testing_lexical_strategies = ['original',
 
 
 def setup_lexical_for_training(strategy,
-                               model: BertModel,
-                               tokenizer: BertTokenizer):
+                               model: PreTrainedModel,
+                               tokenizer: PreTrainedTokenizer):
     """ Setups the lexical part of `model` based on `strategy`. """
     assert strategy in training_lexical_strategies
 
@@ -55,8 +56,8 @@ def setup_lexical_for_training(strategy,
 
 
 def setup_lexical_for_testing(strategy: str,
-                              model: BertModel,
-                              tokenizer: BertTokenizer,
+                              model: PreTrainedModel,
+                              tokenizer: PreTrainedTokenizer,
                               target_lexical: str):
     """
     Setup the model lexical part according to `strategy`.

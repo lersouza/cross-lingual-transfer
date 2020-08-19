@@ -13,7 +13,7 @@ from crosslangt.nli import (load_nli_dataset, prepare_nli_dataset)
 from crosslangt.lexical import setup_lexical_for_training
 
 
-class NLIModel(LightningModule):
+class NLIFinetuneModel(LightningModule):
     def __init__(self,
                  pretrained_model: str,
                  num_classes: int,
@@ -26,7 +26,7 @@ class NLIModel(LightningModule):
                  tokenizer_name: str = None,
                  **kwargs) -> None:
 
-        super(NLIModel, self).__init__()
+        super(NLIFinetuneModel, self).__init__()
 
         self.save_hyperparameters()
 
@@ -106,8 +106,10 @@ class NLIModel(LightningModule):
         mean_accuracy = accuracies.mean()
         mean_loss = losses.mean()
 
-        return {f'{prefix}avg_accuracy': mean_accuracy,
-                f'{prefix}avg_loss': mean_loss}
+        results_dict = {f'{prefix}avg_accuracy': mean_accuracy,
+                        f'{prefix}avg_loss': mean_loss}
+
+        return {**results_dict, 'log': results_dict}
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_dataset,
@@ -140,7 +142,7 @@ class NLIModel(LightningModule):
 
     def setup(self, stage: str):
         setup_lexical_for_training(self.hparams.train_lexical_strategy,
-                                   self.bert, self.tokenizer)
+                                   self.model, self.tokenizer)
 
         self.train_dataset = load_nli_dataset(
             self.hparams.data_dir,
@@ -156,7 +158,7 @@ class NLIModel(LightningModule):
             self.hparams.max_seq_length,
             self.train_key)
 
-    def __set_feature_keys(self, key_type):
+    def __set_feature_keys(self):
         model_name = self.hparams.pretrained_model.split('/').pop()
         tokenizer_name = self.hparams.tokenizer_name or ''
         tokenizer_name = tokenizer_name.split('/').pop()
