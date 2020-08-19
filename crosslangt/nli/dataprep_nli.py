@@ -16,6 +16,7 @@ from transformers import PreTrainedTokenizer
 from transformers.data.processors import DataProcessor, InputExample
 from transformers.data.processors.glue import MnliProcessor
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -219,7 +220,8 @@ def extract_features(data_file_path: str, split: str, max_seq_length: int,
         encoded = tokenizer.encode_plus(example.text_a,
                                         example.text_b,
                                         max_length=max_seq_length,
-                                        pad_to_max_length=True)
+                                        pad_to_max_length=True,
+                                        truncation=True)
 
         encoded['label'] = available_labels.index(example.label)
         encoded['pairID'] = example.guid
