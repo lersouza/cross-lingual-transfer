@@ -24,10 +24,13 @@ class NLIDataset(Dataset):
 
     def __getitem__(self, index: int):
         example = self.examples[index]
-
-        return {
+        features = {
             'input_ids': torch.tensor(example.input_ids),
             'attention_mask': torch.tensor(example.attention_mask),
-            'token_type_ids': torch.tensor(example.token_type_ids),
             'label': torch.tensor(example.label)
         }
+
+        if example.token_type_ids is not None:
+            features['token_type_ids'] = example.token_type_ids
+
+        return features
