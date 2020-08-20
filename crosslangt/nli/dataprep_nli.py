@@ -197,6 +197,8 @@ def prepare_nli_dataset(dataset: str,
                    processed_dataset_file,
                    pickle_protocol=HIGHEST_PROTOCOL)
 
+    return final_dataset_path
+
 
 def extract_features(data_file_path: str, split: str, max_seq_length: int,
                      tokenizer: PreTrainedTokenizer,
