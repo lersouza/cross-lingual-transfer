@@ -2,7 +2,7 @@ import os
 
 import torch
 from pytorch_lightning import LightningModule
-from torch.optim import Adam
+from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from transformers import BertForPreTraining, BertTokenizer
 
@@ -12,6 +12,7 @@ from crosslangt.pretrain.dataset import LexicalTrainDataset
 class LexicalTrainingModel(LightningModule):
     def __init__(self,
                  pretrained_model,
+                 tokenizer_name_or_path: str,
                  data_dir: str,
                  batch_size: int,
                  max_train_examples: int = None,
@@ -21,7 +22,7 @@ class LexicalTrainingModel(LightningModule):
         self.save_hyperparameters()
 
         self.bert = BertForPreTraining.from_pretrained(pretrained_model)
-        self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
+        self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name_or_path)
 
         self.__setup_lexical_for_training()
 
@@ -45,11 +46,10 @@ class LexicalTrainingModel(LightningModule):
         return outputs
 
     def configure_optimizers(self):
-        return Adam(self.parameters(),
-                    lr=1e-4,
-                    betas=(0.9, 0.999),
-                    eps=1e-6,
-                    weight_decay=0.01)
+        return AdamW(self.parameters(),
+                     lr=1e-4,
+                     betas=(0.9, 0.999),
+                     eps=1e-8)
 
     def training_step(self, batch, batch_idx):
         loss = self.__run_step(batch)
@@ -89,13 +89,15 @@ class LexicalTrainingModel(LightningModule):
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_dataset,
                           batch_size=self.hparams.batch_size,
-                          num_workers=10,
+                          num_workers=8,
+                          shuffle=True,
                           collate_fn=self.train_dataset.collate_batch)
 
     def val_dataloader(self):
         return DataLoader(self.eval_dataset,
                           batch_size=self.hparams.batch_size,
-                          num_workers=1,
+                          num_workers=8,
+                          shuffle=False,
                           collate_fn=self.eval_dataset.collate_batch)
 
     def setup(self, stage: str):

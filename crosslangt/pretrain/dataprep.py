@@ -1,42 +1,20 @@
-import os
 import logging
+import os
+from pickle import HIGHEST_PROTOCOL
+import torch
 
-from dataclasses import dataclass
 from pytorch_lightning import seed_everything
 from random import random, randint, shuffle
 from transformers import BertTokenizerFast
 from tqdm import tqdm
 from typing import List
 
-
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class PreTrainInstace():
-    """
-    Represents and example (instance) for Pre training BERT.
-    This examples consists of:
-
-    - sentence_pair: A list of tokens representing a sentence pair.
-                     Start token is always [CLS] and end token is [SEP].
-                     The sentences are divided by an additional [SEP] token.
-
-                     Example:
-                     - '[CLS]', 'sent1', '[SEP]', 'sent2', '[SEP]'
-
-    - segment_ids:   A list of size len(sentence_pair) with 0 to represent
-                     the tokens of first sentence and 1 for the second.
-
-    - is_next:       A flag indicating whether or not the second sentence
-                     actual follows the first one. Used for NSP task.
-    """
-    sentence_pair: List[str]
-    segment_ids: List[int]
-    is_next: bool
-
-
-def create_training_intances(documents, max_seq_length, output_path,
+def create_training_intances(documents,
+                             max_seq_length,
+                             output_path,
                              tokenizer: BertTokenizerFast,
                              use_tqdm=True,
                              tqdm_desc='processing documents'):
@@ -65,8 +43,9 @@ def create_training_intances(documents, max_seq_length, output_path,
         all_docs_iterable_ = tqdm(all_documents_, desc=tqdm_desc)
 
     for i, document in enumerate(all_docs_iterable_):
-        instances.extend(create_from_document(
-            i, document, all_documents_, max_seq_length))
+        instances.extend(
+            create_from_document(i, document, all_documents_, max_seq_length,
+                                 tokenizer))
 
     logger.debug(f'Created {len(instances)} from document {i}')
     logger.info(f'Generated {len(instances)} instances'
@@ -74,33 +53,13 @@ def create_training_intances(documents, max_seq_length, output_path,
 
     shuffle(instances)  # Shuffle for non-sequential doc sentences
 
-    return write_instances_to_file(
-        instances, max_seq_length, output_path, tokenizer)
+    torch.save(instances, output_path, pickle_protocol=HIGHEST_PROTOCOL)
+
+    return (output_path, len(instances))
 
 
-def write_instances_to_file(
-    instances: List[PreTrainInstace], max_seq_length: int, output_path: str,
-        tokenizer: BertTokenizerFast):
-
-    with open(output_path, mode='w') as sfile:
-        for i, instance in enumerate(tqdm(instances, 'saving instances')):
-            seq_size = len(instance.sentence_pair)
-            input_ids = tokenizer.convert_tokens_to_ids(instance.sentence_pair)
-            padding_size = max_seq_length - seq_size
-
-            input_ids = input_ids + [0] * padding_size
-            segment_ids = instance.segment_ids + [0] * padding_size
-            label = 1 if instance.is_next else 0
-
-            in_str = ' '.join([str(in_id) for in_id in input_ids])
-            tok_ty_str = ' '.join([str(in_id) for in_id in segment_ids])
-
-            sfile.write(f'{in_str}\t{tok_ty_str}\t{label}\r\n')
-
-    return (output_path, i+1)
-
-
-def create_from_document(doc_idx, doc, all_docs, max_seq_length):
+def create_from_document(doc_idx, doc, all_docs, max_seq_length,
+                         tokenizer: BertTokenizerFast):
     """
     I heavily rely on the implementation of BERT to generate training data:
     github.com/google-research/bert/blob/master/create_pretraining_data.py
@@ -194,11 +153,13 @@ def create_from_document(doc_idx, doc, all_docs, max_seq_length):
                 segment_ids = [0] * (len(sentence_a) + 2)
                 segment_ids += [1] * (len(sentence_b) + 1)
 
-                instances.append(
-                    PreTrainInstace(
-                        sentence_pair=final_seq,
-                        segment_ids=segment_ids,
-                        is_next=is_next))
+                input_ids = tokenizer.convert_tokens_to_ids(final_seq)
+
+                instances.append({
+                    'input_ids': input_ids,
+                    'token_type_ids': segment_ids,
+                    'is_next': is_next
+                })
 
             current_chunk = []
             current_length = 0
@@ -250,14 +211,21 @@ def generate_examples_from_file(file, tokenizer_name, output, max_seq_length):
     output_path = os.path.join(output, f'{file_name}.examples')
 
     gen_file, num_examples = create_training_intances(
-        documents, max_seq_length, output_path, tokenizer,
+        documents,
+        max_seq_length,
+        output_path,
+        tokenizer,
         tqdm_desc=f'creating instances for {file.name}')
 
     return gen_file, num_examples
 
 
-def generate_examples(input_files, tokenizer_name, output, max_seq_length,
-                      random_seed, files_type='train'):
+def generate_examples(input_files,
+                      tokenizer_name,
+                      output,
+                      max_seq_length,
+                      random_seed,
+                      files_type='train'):
     """
     Generate training examples based on the `input_files`.
     """
@@ -270,8 +238,8 @@ def generate_examples(input_files, tokenizer_name, output, max_seq_length,
                 file = open(file)
 
             with file:
-                gen, qty = generate_examples_from_file(
-                    file, tokenizer_name, output, max_seq_length)
+                gen, qty = generate_examples_from_file(file, tokenizer_name,
+                                                       output, max_seq_length)
 
                 gen = os.path.abspath(gen)  # resolve the full path
 
