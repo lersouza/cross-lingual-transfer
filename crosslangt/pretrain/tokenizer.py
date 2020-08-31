@@ -3,7 +3,6 @@ import os
 
 from typing import List
 from tokenizers import BertWordPieceTokenizer
-from transformers.tokenization_utils import TOKENIZER_CONFIG_FILE
 
 
 def get_bert_initial_alphabet():
@@ -45,7 +44,7 @@ def train_tokenizer(files: List[str],
 
     # Creating a default config for the tokenizer
     config = {'do_lower_case': lowercase, 'strip_accents': strip_accents}
-    config_file_path = os.path.join(tokenizer_path, TOKENIZER_CONFIG_FILE)
+    config_file_path = os.path.join(tokenizer_path, 'tokenizer_config.json')
 
     with open(config_file_path, 'w+') as config_file:
         json.dump(config, config_file)
