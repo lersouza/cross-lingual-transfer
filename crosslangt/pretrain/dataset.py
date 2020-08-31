@@ -67,7 +67,7 @@ class LexicalTrainDataset(Dataset):
         input_ids[:target_length] = e_input_ids[:target_length]
         token_type_ids[:target_length] = e_type_ids[:target_length]
 
-        is_next = torch.tensor(example['is_next'])
+        is_next = torch.tensor(example['is_next']).long()
 
         attention_mask = torch.zeros_like(input_ids)
         attention_mask.masked_fill_(input_ids != pad_token_id, 1)
