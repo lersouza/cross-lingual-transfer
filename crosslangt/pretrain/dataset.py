@@ -25,11 +25,13 @@ class LexicalTrainDataset(Dataset):
                  index_file: str,
                  tokenizer: PreTrainedTokenizer,
                  mlm_probability: float = 0.15,
-                 max_examples: int = None):
+                 max_examples: int = None,
+                 max_seq_length: int = None):
 
         assert os.path.exists(index_file)
 
         self.index = []
+        self.index_config = {}
         self.examples = []
 
         # Keep track of all examples referenced by index_file
@@ -37,6 +39,7 @@ class LexicalTrainDataset(Dataset):
         # use __len__ to get the actual number of loaded instances
         self.total_examples = 0
         self.max_examples = max_examples
+        self.override_max_seq_length = max_seq_length
 
         self.tokenizer = tokenizer
         self.mlm_probability = mlm_probability
@@ -50,9 +53,20 @@ class LexicalTrainDataset(Dataset):
     def __getitem__(self, index: int):
         example = self.examples[index]
         pad_token_id = self.tokenizer.pad_token_id
+        max_seq_length = self.override_max_seq_length or self.index_config.get(
+            'max_seq_length', 256)
 
-        input_ids = torch.tensor(example['input_ids'])
-        token_type_ids = torch.tensor(example['token_type_ids'])
+        input_ids = torch.empty(max_seq_length).long().fill_(pad_token_id)
+        token_type_ids = torch.empty(max_seq_length).long().fill_(pad_token_id)
+
+        e_input_ids = torch.tensor(example['input_ids'], dtype=torch.long)
+        e_type_ids = torch.tensor(example['token_type_ids'], dtype=torch.long)
+
+        target_length = min(len(e_input_ids), max_seq_length)
+
+        input_ids[:target_length] = e_input_ids[:target_length]
+        token_type_ids[:target_length] = e_type_ids[:target_length]
+
         is_next = torch.tensor(example['is_next'])
 
         attention_mask = torch.zeros_like(input_ids)
@@ -132,7 +146,19 @@ class LexicalTrainDataset(Dataset):
         start_index = 0
 
         with open(index_file, "r") as index:
-            for line in index.readlines():
+            index_lines = index.readlines()
+
+            # First line is a config line
+            seq_length, seed, tokenizer = index_lines[0].strip().split("\t")
+
+            self.index_config['max_seq_length'] = int(seq_length)
+            self.index_config['data_seed'] = int(seed)
+            self.index_config['data_tokenizer'] = tokenizer
+
+            # We skip the first config line and the next empty, sperator line
+            for line_idx in range(2, len(index_lines)):
+                line = index_lines[line_idx]
+
                 file_name, num_examples = line.split("\t")
                 num_examples = int(num_examples.strip())
 

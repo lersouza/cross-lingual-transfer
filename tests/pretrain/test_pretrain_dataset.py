@@ -19,7 +19,9 @@ BERT_TOKENIZER = BertTokenizer.from_pretrained('bert-base-cased')
 
 
 def get_mock_open_index():
-    index_file = """location_a\t10
+    index_file = """9\t123\tbert-base-cased
+
+        location_a\t10
         location_b\t12
         location_c\t5"""
 
@@ -212,3 +214,26 @@ class LexicalTrainDatasetTestCase(unittest.TestCase):
             self.assertTupleEqual(batch['attention_mask'].shape, (2, 9))
             self.assertTupleEqual(batch['next_sentence_label'].shape, (2, ))
             self.assertTupleEqual(batch['mlm_labels'].shape, (2, 9))
+
+    @patch('crosslangt.pretrain.dataset.torch.load', new=load_location_mock_a)
+    def test_collate_batch_differentsizes(self, exists_mock):
+        with patch(DATASET_OPEN_FUNC, get_mock_open_index()):
+            dataset = LexicalTrainDataset('/some/index',
+                                          tokenizer=BERT_TOKENIZER,
+                                          max_seq_length=15)
+
+            examples = [dataset[i] for i in range(len(dataset))]
+
+            batch = dataset.collate_batch(examples)
+
+            self.assertIn('input_ids', batch)
+            self.assertIn('token_type_ids', batch)
+            self.assertIn('attention_mask', batch)
+            self.assertIn('next_sentence_label', batch)
+            self.assertIn('mlm_labels', batch)
+
+            self.assertTupleEqual(batch['input_ids'].shape, (2, 15))
+            self.assertTupleEqual(batch['token_type_ids'].shape, (2, 15))
+            self.assertTupleEqual(batch['attention_mask'].shape, (2, 15))
+            self.assertTupleEqual(batch['next_sentence_label'].shape, (2, ))
+            self.assertTupleEqual(batch['mlm_labels'].shape, (2, 15))

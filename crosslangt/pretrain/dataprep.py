@@ -233,6 +233,13 @@ def generate_examples(input_files,
     os.makedirs(output, exist_ok=True)
 
     with open(os.path.join(output, f'{files_type}_index'), 'w+') as index:
+        # First line is a configuration line
+        # This line indicates the parameters for generating the data
+        # {Max Sequence length}\t{Random Seed}\t{Tokenizer Name}
+        # Then, we write an empty separator line.
+        index.write(f'{max_seq_length}\t{random_seed}\t{tokenizer_name}\r\n')
+        index.write('\r\n')
+
         for file in input_files:
             if type(file) is str:
                 file = open(file)
