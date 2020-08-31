@@ -56,9 +56,21 @@ class NliDataPrepTestCase(TestCase):
         self.assertEqual(features[2].pairID, '5')
 
         tokenizer.encode_plus.assert_has_calls([
-            call('text+a', 'text+b', max_length=64, pad_to_max_length=True),
-            call('text+c', 'text+d', max_length=64, pad_to_max_length=True),
-            call('text+e', 'text+f', max_length=64, pad_to_max_length=True)
+            call('text+a',
+                 'text+b',
+                 max_length=64,
+                 pad_to_max_length=True,
+                 truncation=True),
+            call('text+c',
+                 'text+d',
+                 max_length=64,
+                 pad_to_max_length=True,
+                 truncation=True),
+            call('text+e',
+                 'text+f',
+                 max_length=64,
+                 pad_to_max_length=True,
+                 truncation=True)
         ])
 
     def test_extract_dev_features(self):
@@ -80,11 +92,13 @@ class NliDataPrepTestCase(TestCase):
             call('text+a+eval',
                  'text+b',
                  max_length=64,
-                 pad_to_max_length=True),
+                 pad_to_max_length=True,
+                 truncation=True),
             call('text+c+eval',
                  'text+d',
                  max_length=64,
-                 pad_to_max_length=True),
+                 pad_to_max_length=True,
+                 truncation=True),
         ])
 
 
@@ -141,8 +155,8 @@ class NliProcessorsTestCase(TestCase):
         ]
 
         with patch(base_name, return_value=examples):
-            features = extract_features('/some/data/train.tsv', 'eval',
-                                        64, tokenizer, processor)
+            features = extract_features('/some/data/train.tsv', 'eval', 64,
+                                        tokenizer, processor)
 
             self.assertEqual(len(features), 2)
 
