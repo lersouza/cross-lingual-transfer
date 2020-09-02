@@ -92,7 +92,7 @@ class ASSIN2Processor(DataProcessor):
 class ASSIN2MnliAlignedProcessor(ASSIN2Processor):
     def get_labels(self):
         """Gets the list of labels for this data set."""
-        return ['entailment', 'neutral']
+        return ["contradiction", "entailment", "neutral"]
 
     def map_label(self, label_original_value):
         if label_original_value == 'none':
