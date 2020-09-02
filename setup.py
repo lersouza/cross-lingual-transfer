@@ -13,6 +13,6 @@ setup(
         'requests',
         'nltk',
         'tqdm',
-        'lxml'
+        'lxml>=4.5.2'
     ]
 )

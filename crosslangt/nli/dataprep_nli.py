@@ -4,9 +4,7 @@ import torch
 
 from pickle import HIGHEST_PROTOCOL
 from typing import List
-from xml import etree
-
-from torch.utils import data
+from xml.etree import ElementTree as etree
 
 from .datasets import NLIExample, NLIDataset
 
