@@ -31,6 +31,6 @@ class NLIDataset(Dataset):
         }
 
         if example.token_type_ids is not None:
-            features['token_type_ids'] = example.token_type_ids
+            features['token_type_ids'] = torch.tensor(example.token_type_ids)
 
         return features
