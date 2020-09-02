@@ -153,10 +153,22 @@ class NLIModelTestCase(TestCase):
                                  max_seq_length=128)
 
         outputs = [
-            {'val_loss': torch.tensor(1.), 'val_acc': torch.tensor(0.5)},
-            {'val_loss': torch.tensor(2.), 'val_acc': torch.tensor(0.7)},
-            {'val_loss': torch.tensor(3.), 'val_acc': torch.tensor(0.4)},
-            {'val_loss': torch.tensor(4.), 'val_acc': torch.tensor(0.4)},
+            {
+                'val_loss': torch.tensor(1.),
+                'val_acc': torch.tensor(0.5)
+            },
+            {
+                'val_loss': torch.tensor(2.),
+                'val_acc': torch.tensor(0.7)
+            },
+            {
+                'val_loss': torch.tensor(3.),
+                'val_acc': torch.tensor(0.4)
+            },
+            {
+                'val_loss': torch.tensor(4.),
+                'val_acc': torch.tensor(0.4)
+            },
         ]
 
         results = model.validation_epoch_end(outputs)
@@ -182,10 +194,22 @@ class NLIModelTestCase(TestCase):
                                  max_seq_length=128)
 
         outputs = [
-            {'test_loss': torch.tensor(1.), 'test_acc': torch.tensor(0.5)},
-            {'test_loss': torch.tensor(2.), 'test_acc': torch.tensor(0.7)},
-            {'test_loss': torch.tensor(3.), 'test_acc': torch.tensor(0.4)},
-            {'test_loss': torch.tensor(4.), 'test_acc': torch.tensor(0.4)},
+            {
+                'test_loss': torch.tensor(1.),
+                'test_acc': torch.tensor(0.5)
+            },
+            {
+                'test_loss': torch.tensor(2.),
+                'test_acc': torch.tensor(0.7)
+            },
+            {
+                'test_loss': torch.tensor(3.),
+                'test_acc': torch.tensor(0.4)
+            },
+            {
+                'test_loss': torch.tensor(4.),
+                'test_acc': torch.tensor(0.4)
+            },
         ]
 
         results = model.test_epoch_end(outputs)
@@ -197,13 +221,62 @@ class NLIModelTestCase(TestCase):
         self.assertEqual(results['test_avg_loss'], torch.tensor(2.5))
         self.assertEqual(results['test_avg_accuracy'], torch.tensor(0.5))
 
+    def test_batch_logging(self, config_mock, model_mock, tok_mock):
+        _, pretrained, tokenizer = self.__setup_mocks(config_mock, model_mock,
+                                                      tok_mock)
+
+        tokenizer.decode.return_value = 'a a a [SEP] b b'
+        tokenizer.sep_token = '[SEP]'
+
+        logger = MagicMock()
+        logger.experiment = MagicMock()
+        logger.experiment.add_text = MagicMock()
+
+        model = NLIFinetuneModel(pretrained_model='bert-base-cased',
+                                 num_classes=3,
+                                 train_lexical_strategy='my-strategy',
+                                 train_dataset='mnli',
+                                 eval_dataset='mnli-for-eval',
+                                 data_dir='/data',
+                                 batch_size=32,
+                                 max_seq_length=128)
+
+        model.logger = logger
+
+        batch = self.__get_batch()
+
+        with patch.object(model, 'forward', self.__mock_forward):
+            model.training_step(batch, 1)
+            logger.experiment.add_text.assert_not_called()
+
+            model.validation_step(batch, 1)
+            logger.experiment.add_text.assert_has_calls([
+                call.__bool__(),
+                call('a a a\tb b\t0\t0'),
+                call('a a a\tb b\t1\t0')
+            ])
+
+            model.test_step(batch, 1)
+            logger.experiment.add_text.assert_has_calls([
+                call.__bool__(),
+                call('a a a\tb b\t0\t0'),
+                call('a a a\tb b\t1\t0'),
+                call.__bool__(),
+                call('a a a\tb b\t0\t0'),
+                call('a a a\tb b\t1\t0')
+            ])
+
     def __get_batch(self):
         return {
-            'input_ids': torch.tensor([-100, -100, -100, -100],
-                                      dtype=torch.long),
-            'attention_mask': torch.tensor([1, 1, 1, 1], dtype=torch.long),
-            'token_type_ids': torch.tensor([2, 2, 2, 2], dtype=torch.long),
-            'label': torch.tensor([0, 1, 0, 1], dtype=torch.long)
+            'input_ids':
+            torch.tensor([[-100, -100, -100, -100], [100, 100, 100, 100]],
+                         dtype=torch.long),
+            'attention_mask':
+            torch.tensor([[1, 1, 1, 1], [1, 1, 1, 1]], dtype=torch.long),
+            'token_type_ids':
+            torch.tensor([[2, 2, 2, 2], [2, 2, 2, 2]], dtype=torch.long),
+            'label':
+            torch.tensor([0, 1], dtype=torch.long)
         }
 
     def __mock_forward(self, **inputs):
@@ -212,7 +285,9 @@ class NLIModelTestCase(TestCase):
         If labels are provided, return a fixed loss of 0.3.
         Always return logits such that the class 0 will be the resulting class.
         """
-        return_object = (torch.tensor([0.7, 0.6, 0.5, 0.4]), torch.tensor([]),
+        return_object = (torch.tensor([[0.7, 0.6, 0.5, 0.4],
+                                       [0.7, 0.6, 0.5,
+                                        0.4]]), torch.tensor([]),
                          torch.tensor([]))
 
         if 'labels' in inputs:

@@ -58,7 +58,7 @@ class NLIFinetuneModel(LightningModule):
         return {'loss': loss, 'log': logs, 'progress_bar': tensor_bar}
 
     def validation_step(self, batch, batch_idx):
-        loss, accuracy = self._run_step(batch, batch_idx)
+        loss, accuracy = self._run_step(batch, batch_idx, True)
 
         logs = {'val_acc': accuracy, 'val_loss': loss}
         return {'val_loss': loss, 'val_acc': accuracy, 'log': logs,
@@ -68,7 +68,7 @@ class NLIFinetuneModel(LightningModule):
         return self._eval_epoch_end(outputs, 'val_')
 
     def test_step(self, batch, batch_idx):
-        loss, accuracy = self._run_step(batch, batch_idx)
+        loss, accuracy = self._run_step(batch, batch_idx, True)
 
         logs = {'test_acc': accuracy, 'test_loss': loss}
         return {'test_loss': loss, 'test_acc': accuracy, 'log': logs,
@@ -77,7 +77,7 @@ class NLIFinetuneModel(LightningModule):
     def test_epoch_end(self, outputs):
         return self._eval_epoch_end(outputs, 'test_')
 
-    def _run_step(self, batch, batch_idx):
+    def _run_step(self, batch, batch_idx, log: bool = False):
         inputs = {}
 
         inputs['input_ids'] = batch['input_ids']
@@ -93,6 +93,9 @@ class NLIFinetuneModel(LightningModule):
         predicted = torch.argmax(logits, dim=-1)
 
         accuracy = self.metric(predicted, batch['label'])
+
+        if log is True:
+            self.__log_batch(inputs['input_ids'], inputs['labels'], predicted)
 
         return loss, accuracy
 
@@ -164,3 +167,16 @@ class NLIFinetuneModel(LightningModule):
         tokenizer_name = tokenizer_name.split('/').pop()
 
         self.train_key = f'{model_name}.{tokenizer_name}'
+
+    def __log_batch(self, input_ids, labels, predicted):
+        if self.logger is not None and self.logger.experiment is not None \
+           and self.logger.experiment.add_text:
+
+            for i, input_ids in enumerate(input_ids.tolist()):
+                decoded = self.tokenizer.decode(input_ids)
+                sentences = decoded.split(self.tokenizer.sep_token)
+
+                self.logger.experiment.add_text(
+                    f'{sentences[0].strip()}\t{sentences[1].strip()}\t'
+                    f'{labels[i]}\t{predicted.tolist()[i]}'
+                )
