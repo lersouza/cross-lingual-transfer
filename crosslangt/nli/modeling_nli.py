@@ -177,6 +177,8 @@ class NLIFinetuneModel(LightningModule):
                 sentences = decoded.split(self.tokenizer.sep_token)
 
                 self.logger.experiment.add_text(
-                    f'{sentences[0].strip()}\t{sentences[1].strip()}\t'
+                    'nli-finetune',
+                    f'{sentences[0].strip()}\t'
+                    f'{sentences[1].strip()}\t'
                     f'{labels[i]}\t{predicted.tolist()[i]}'
                 )

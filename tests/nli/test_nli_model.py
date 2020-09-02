@@ -252,18 +252,18 @@ class NLIModelTestCase(TestCase):
             model.validation_step(batch, 1)
             logger.experiment.add_text.assert_has_calls([
                 call.__bool__(),
-                call('a a a\tb b\t0\t0'),
-                call('a a a\tb b\t1\t0')
+                call('nli-finetune', 'a a a\tb b\t0\t0'),
+                call('nli-finetune', 'a a a\tb b\t1\t0')
             ])
 
             model.test_step(batch, 1)
             logger.experiment.add_text.assert_has_calls([
                 call.__bool__(),
-                call('a a a\tb b\t0\t0'),
-                call('a a a\tb b\t1\t0'),
+                call('nli-finetune', 'a a a\tb b\t0\t0'),
+                call('nli-finetune', 'a a a\tb b\t1\t0'),
                 call.__bool__(),
-                call('a a a\tb b\t0\t0'),
-                call('a a a\tb b\t1\t0')
+                call('nli-finetune', 'a a a\tb b\t0\t0'),
+                call('nli-finetune', 'a a a\tb b\t1\t0')
             ])
 
     def __get_batch(self):
