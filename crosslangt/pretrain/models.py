@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class LexicalTrainingModel(LightningModule):
     google_checkpoint_location = \
-        'https://storage.googleapis.com/bert_models/2020_02_20/' \
+        'https://storage.googleapis.com/bert_models/2018_10_18/' \
         'cased_L-12_H-768_A-12.zip'
 
     google_checkpoint_root = 'cased_L-12_H-768_A-12'
