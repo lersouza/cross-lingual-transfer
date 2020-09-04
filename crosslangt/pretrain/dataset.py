@@ -67,7 +67,7 @@ class LexicalTrainDataset(Dataset):
         input_ids[:target_length] = e_input_ids[:target_length]
         token_type_ids[:target_length] = e_type_ids[:target_length]
 
-        is_next = torch.tensor(example['is_next']).long()
+        is_random_next = torch.tensor(example['is_random_next']).long()
 
         attention_mask = torch.zeros_like(input_ids)
         attention_mask.masked_fill_(input_ids != pad_token_id, 1)
@@ -76,7 +76,7 @@ class LexicalTrainDataset(Dataset):
             'input_ids': input_ids,
             'attention_mask': attention_mask,
             'token_type_ids': token_type_ids,
-            'next_sentence_label': is_next
+            'next_sentence_label': is_random_next
         }
 
     def collate_batch(self, batch):

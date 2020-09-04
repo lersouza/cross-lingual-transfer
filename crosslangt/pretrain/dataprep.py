@@ -103,7 +103,7 @@ def create_from_document(doc_idx, doc, all_docs, max_seq_length,
                 for ai in range(sentence_a_end):
                     sentence_a.extend(current_chunk[ai])
 
-                is_next = True
+                is_random_next = False
                 chance = random()
 
                 if len(all_docs) > 1 and \
@@ -112,7 +112,8 @@ def create_from_document(doc_idx, doc, all_docs, max_seq_length,
                     sentence_b_tgt_len = target_seq_length - len(sentence_a)
 
                     # Let's get a random sentence
-                    is_next = False
+                    is_random_next = True
+                    random_doc_idx = -1
 
                     for _ in range(10):
                         random_doc_idx = randint(0, len(all_docs) - 1)
@@ -158,7 +159,7 @@ def create_from_document(doc_idx, doc, all_docs, max_seq_length,
                 instances.append({
                     'input_ids': input_ids,
                     'token_type_ids': segment_ids,
-                    'is_next': is_next
+                    'is_random_next': is_random_next
                 })
 
             current_chunk = []

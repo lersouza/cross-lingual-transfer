@@ -33,11 +33,11 @@ def load_location_mock_a(location):
         return [{
             'input_ids': list(range(1, 10)),
             'token_type_ids': [0] * 9,
-            'is_next': True
+            'is_random_next': False
         }, {
             'input_ids': list(range(1, 10)),
             'token_type_ids': [0] * 9,
-            'is_next': False
+            'is_random_next': True
         }]
     else:
         return []
@@ -61,7 +61,7 @@ class GenerateDatasetTestCase(unittest.TestCase):
         self.assertEqual(len(instances[0]['input_ids']), 10,
                          'The size of the example must be 10.')
 
-        self.assertTrue(instances[0]['is_next'], 'No random sentences.')
+        self.assertFalse(instances[0]['is_random_next'], 'No random sentences.')
 
         sent_a, sent_b = self.split_sentences(instances[0])
 
@@ -77,12 +77,12 @@ class GenerateDatasetTestCase(unittest.TestCase):
                                              BERT_TOKENIZER)
 
         sizes = [len(i['input_ids']) for i in instances]
-        classifications = [i['is_next'] for i in instances]
+        classifications = [i['is_random_next'] for i in instances]
 
         self.assertEqual(len(instances), 2, 'There must be 2 examples')
         self.assertListEqual(sizes, [10, 10],
                              'All examples must be the same size')
-        self.assertListEqual(classifications, [False, False],
+        self.assertListEqual(classifications, [True, True],
                              'All examples must contain false next sentences')
 
     def test_short_documents(self):
@@ -101,9 +101,9 @@ class GenerateDatasetTestCase(unittest.TestCase):
             len(instances[0]['input_ids']), 20,
             'The should be less than max_length since '
             'it does not have enough tokens.')
-        self.assertFalse(instances[0]['is_next'],
-                         'Should use a random sentence'
-                         'for more data.')
+        self.assertTrue(instances[0]['is_random_next'],
+                        'Should use a random sentence'
+                        'for more data.')
 
     def split_sentences(self, training_instace):
         sentences = training_instace['input_ids']
@@ -174,7 +174,7 @@ class LexicalTrainDatasetTestCase(unittest.TestCase):
         expected_input_ids = torch.arange(1, 10, dtype=torch.long)
         expected_token_type_ids = torch.tensor([0] * 9, dtype=torch.long)
         expected_attention_mask = torch.ones(9)
-        expected_is_next = torch.tensor([1], dtype=torch.long)
+        expected_is_random_next = torch.tensor([0], dtype=torch.long)
 
         with patch(DATASET_OPEN_FUNC, get_mock_open_index()):
             dataset = LexicalTrainDataset('/some/index', BERT_TOKENIZER)
@@ -193,7 +193,7 @@ class LexicalTrainDatasetTestCase(unittest.TestCase):
             self.assertTrue(
                 torch.all(
                     torch.eq(example['next_sentence_label'],
-                             expected_is_next)))
+                             expected_is_random_next)))
 
     @patch('crosslangt.pretrain.dataset.torch.load', new=load_location_mock_a)
     def test_collate_batch(self, exists_mock):
