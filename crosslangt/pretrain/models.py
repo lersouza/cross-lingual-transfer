@@ -1,15 +1,25 @@
+import logging
 import os
-
 import torch
+
 from pytorch_lightning import LightningModule
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
-from transformers import BertForPreTraining, BertTokenizer
+from transformers import BertConfig, BertForPreTraining, BertTokenizer
 
+from crosslangt.dataset_utils import download_and_extract
 from crosslangt.pretrain.dataset import LexicalTrainDataset
+
+logger = logging.getLogger(__name__)
 
 
 class LexicalTrainingModel(LightningModule):
+    google_checkpoint_location = \
+        'https://storage.googleapis.com/bert_models/2020_02_20/' \
+        'cased_L-12_H-768_A-12.zip'
+
+    google_checkpoint_root = 'cased_L-12_H-768_A-12'
+
     def __init__(self,
                  pretrained_model,
                  tokenizer_name_or_path: str,
@@ -21,7 +31,11 @@ class LexicalTrainingModel(LightningModule):
 
         self.save_hyperparameters()
 
-        self.bert = BertForPreTraining.from_pretrained(pretrained_model)
+        if pretrained_model.startswith('google-checkpoint'):
+            self._load_google_checkpoint()
+        else:
+            self.bert = BertForPreTraining.from_pretrained(pretrained_model)
+
         self.tokenizer = BertTokenizer.from_pretrained(tokenizer_name_or_path)
 
         self.__setup_lexical_for_training()
@@ -46,10 +60,7 @@ class LexicalTrainingModel(LightningModule):
         return outputs
 
     def configure_optimizers(self):
-        return AdamW(self.parameters(),
-                     lr=1e-4,
-                     betas=(0.9, 0.999),
-                     eps=1e-8)
+        return AdamW(self.parameters(), lr=1e-4, betas=(0.9, 0.999), eps=1e-8)
 
     def training_step(self, batch, batch_idx):
         loss = self.__run_step(batch)
@@ -119,6 +130,24 @@ class LexicalTrainingModel(LightningModule):
         else:
             tindex = os.path.join(self.hparams.data_dir, 'test_index')
             self.test_dataset = LexicalTrainDataset(tindex, self.tokenizer)
+
+    def _load_google_checkpoint(self):
+        logger.info('Loading Checkpoint from Google for Pre training')
+
+        download_and_extract(self.google_checkpoint_location, './')
+
+        checkpoint_dir = os.path.join('./', self.google_checkpoint_root)
+        config_location = os.path.join(checkpoint_dir, 'bert_config.json')
+        index_location = os.path.join(checkpoint_dir, 'bert_model.ckpt.index')
+
+        logger.info(
+            f'Config file: {config_location}. Index file: {index_location}'
+        )
+
+        config = BertConfig.from_json_file(config_location)
+        self.bert = BertForPreTraining.from_pretrained(index_location,
+                                                       config=config,
+                                                       from_tf=True)
 
     def __setup_lexical_for_training(self):
         # We freeze all parameters in this model.
