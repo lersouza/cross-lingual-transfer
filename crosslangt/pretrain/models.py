@@ -128,8 +128,6 @@ class LexicalTrainingModel(LightningModule):
                 eindex,
                 self.tokenizer,
                 max_examples=self.hparams.max_eval_examples)
-
-            self.__setup_lexical_for_training()
         else:
             tindex = os.path.join(self.hparams.data_dir, 'test_index')
             self.test_dataset = LexicalTrainDataset(tindex, self.tokenizer)
