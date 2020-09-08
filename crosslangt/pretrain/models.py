@@ -1,3 +1,4 @@
+from crosslangt.lexical import SlicedEmbedding, SlicedOutputEmbedding
 import logging
 import os
 import torch
@@ -9,6 +10,7 @@ from transformers import BertConfig, BertForPreTraining, BertTokenizer
 
 from crosslangt.dataset_utils import download_and_extract
 from crosslangt.pretrain.dataset import LexicalTrainDataset
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,8 @@ class LexicalTrainingModel(LightningModule):
                  data_dir: str,
                  batch_size: int,
                  max_train_examples: int = None,
-                 max_eval_examples: int = None) -> None:
+                 max_eval_examples: int = None,
+                 train_strategy='train-all-lexical') -> None:
         super(LexicalTrainingModel, self).__init__()
 
         self.save_hyperparameters()
@@ -141,28 +144,51 @@ class LexicalTrainingModel(LightningModule):
         index_location = os.path.join(checkpoint_dir, 'bert_model.ckpt.index')
 
         logger.info(
-            f'Config file: {config_location}. Index file: {index_location}'
-        )
+            f'Config file: {config_location}. Index file: {index_location}')
 
         config = BertConfig.from_json_file(config_location)
         self.bert = BertForPreTraining.from_pretrained(index_location,
                                                        config=config,
                                                        from_tf=True)
 
-    def __setup_lexical_for_training(self):
-        # We freeze all parameters in this model.
-        # Then, we unlock the ones we want.
+    def _freeze_parameters(self):
         for param in self.parameters():
             param.requires_grad = False
 
-        # Train Word Embeddings Only
-        input_embeddings = self.bert.get_input_embeddings()
+    def __setup_lexical_for_training(self):
+        if self.hparams.train_strategy == 'train-all-lexical':
+            # We freeze all parameters in this model.
+            # Then, we unlock the ones we want.
+            self._freeze_parameters()
 
-        for parameter in input_embeddings.parameters():
-            parameter.requires_grad = True
+            # Train Word Embeddings Only
+            input_embeddings = self.bert.get_input_embeddings()
 
-        # We also train the HEAD (Output Embeddings, since they are tied)
-        output_embeddings = self.bert.get_output_embeddings()
+            for parameter in input_embeddings.parameters():
+                parameter.requires_grad = True
 
-        for parameter in output_embeddings.parameters():
-            parameter.requires_grad = True
+            # We also train the HEAD (Output Embeddings, since they are tied)
+            output_embeddings = self.bert.get_output_embeddings()
+
+            for parameter in output_embeddings.parameters():
+                parameter.requires_grad = True
+
+        elif self.hparams.train_strategy == 'train-non-special':
+            self._freeze_parameters()
+
+            # Train Word Embeddings Only, skipping special tokens
+            input_embeddings = self.bert.get_input_embeddings()
+            last_special_token = max(self.tokenizer.all_special_ids)
+
+            new_input_embeddings = SlicedEmbedding.slice(
+                input_embeddings, last_special_token + 1, True, False)
+
+            self.bert.set_input_embeddings(new_input_embeddings)
+
+            # Handling output embeddings
+            output_embeddings = self.bert.get_output_embeddings()
+
+            new_output_embeddings = SlicedOutputEmbedding(
+                output_embeddings, last_special_token + 1, True, False)
+
+            self.bert.cls.predictions.decoder = new_output_embeddings

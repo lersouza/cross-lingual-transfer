@@ -3,7 +3,8 @@ import torch
 from torch.nn import Embedding
 from transformers import BertModel, BertTokenizer
 
-from crosslangt.lexical import (SlicedEmbedding, setup_lexical_for_testing,
+from crosslangt.lexical import (SlicedEmbedding, SlicedOutputEmbedding,
+                                setup_lexical_for_testing,
                                 setup_lexical_for_training)
 
 from unittest.case import TestCase
@@ -25,11 +26,10 @@ class SimpleNetwork(torch.nn.Module):
 
 
 class SlicedEmbeddingsTest(TestCase):
-
     def test_lookup_embeddings(self):
         original_embedding = torch.nn.Embedding(10, 2)
-        slieced_embedding = SlicedEmbedding.slice(
-            original_embedding, 5, True, False)
+        slieced_embedding = SlicedEmbedding.slice(original_embedding, 5, True,
+                                                  False)
 
         batch_for_original = torch.tensor([[0, 1], [8, 9]])
         batch_for_slieced = torch.tensor([[0, 1], [8, 9]])
@@ -45,8 +45,8 @@ class SlicedEmbeddingsTest(TestCase):
         are being updated correctly.
         """
         original_embedding = torch.nn.Embedding(10, 2)
-        slieced_embedding = SlicedEmbedding.slice(
-            original_embedding, 5, True, False)
+        slieced_embedding = SlicedEmbedding.slice(original_embedding, 5, True,
+                                                  False)
 
         # We clone the original weigths, since they are updated
         original_values = original_embedding.weight.clone()
@@ -84,8 +84,8 @@ class SlicedEmbeddingsTest(TestCase):
         are being updated correctly.
         """
         original_embedding = torch.nn.Embedding(10, 2)
-        slieced_embedding = SlicedEmbedding.slice(
-            original_embedding, 5, False, True)
+        slieced_embedding = SlicedEmbedding.slice(original_embedding, 5, False,
+                                                  True)
 
         # We clone the original weigths, since they are updated
         original_values = original_embedding.weight.clone()
@@ -151,6 +151,38 @@ class SlicedEmbeddingsTest(TestCase):
 
         with self.assertRaises(NotImplementedError) as context:
             SlicedEmbedding.slice(already_sliced, 6, True, False)
+
+
+class SlicedOutputEmbeddingTest(TestCase):
+    def test_wrapper_creation(self):
+        any_linear = torch.nn.Linear(10, 20, True)
+
+        wrapper = SlicedOutputEmbedding(any_linear, 11, False, True)
+
+        slice_one = wrapper.first_slice
+        slice_two = wrapper.second_slice
+
+        bias_one = wrapper.first_bias
+        bias_two = wrapper.second_bias
+
+        # First part is to be trainable, so requires_grad must be TRUE
+        self.assertTrue(slice_one.requires_grad)
+
+        # Second part is to be frozen, so requires_grad must be FALSE
+        self.assertFalse(slice_two.requires_grad)
+
+        # Now compare that is was sliced correctly
+        self.assertTrue(
+            torch.all(torch.eq(slice_one.data, any_linear.weight.data[:11])))
+
+        self.assertTrue(
+            torch.all(torch.eq(slice_two.data, any_linear.weight.data[11:])))
+
+        self.assertTrue(
+            torch.all(torch.eq(bias_one.data, any_linear.bias.data[:11])))
+
+        self.assertTrue(
+            torch.all(torch.eq(bias_two.data, any_linear.bias.data[11:])))
 
 
 class SetupLexicalForTrainingTest(TestCase):

@@ -1,26 +1,24 @@
 import logging
 import torch
+import torch.nn.functional as F
 
 from torch import Tensor
 from torch.nn.modules.sparse import Embedding
 from transformers import PreTrainedTokenizer, PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-
 logger = logging.getLogger(__name__)
 
-training_lexical_strategies = ['freeze-all',
-                               'freeze-special',
-                               'freeze-nonspecial',
-                               'none']
+training_lexical_strategies = [
+    'freeze-all', 'freeze-special', 'freeze-nonspecial', 'none'
+]
 
-testing_lexical_strategies = ['original',
-                              'target-lexical-original-special',
-                              'target-lexical']
+testing_lexical_strategies = [
+    'original', 'target-lexical-original-special', 'target-lexical'
+]
 
 
-def setup_lexical_for_training(strategy,
-                               model: PreTrainedModel,
+def setup_lexical_for_training(strategy, model: PreTrainedModel,
                                tokenizer: PreTrainedTokenizer):
     """ Setups the lexical part of `model` based on `strategy`. """
     assert strategy in training_lexical_strategies
@@ -35,17 +33,15 @@ def setup_lexical_for_training(strategy,
     bert_special_tokens_cut = sorted(tokenizer.all_special_ids)[-1] + 1
 
     if strategy == 'freeze-special':
-        tobe_embeddings = SlicedEmbedding.slice(
-            original_embeddings,
-            bert_special_tokens_cut,
-            freeze_first_part=True,
-            freeze_second_part=False)
+        tobe_embeddings = SlicedEmbedding.slice(original_embeddings,
+                                                bert_special_tokens_cut,
+                                                freeze_first_part=True,
+                                                freeze_second_part=False)
     elif strategy == 'freeze-nonspecial':
-        tobe_embeddings = SlicedEmbedding.slice(
-            original_embeddings,
-            bert_special_tokens_cut,
-            freeze_first_part=False,
-            freeze_second_part=True)
+        tobe_embeddings = SlicedEmbedding.slice(original_embeddings,
+                                                bert_special_tokens_cut,
+                                                freeze_first_part=False,
+                                                freeze_second_part=True)
     elif strategy == 'freeze-all':
         tobe_embeddings = original_embeddings
         tobe_embeddings.weight.requires_grad = False
@@ -55,8 +51,7 @@ def setup_lexical_for_training(strategy,
     model.set_input_embeddings(tobe_embeddings)
 
 
-def setup_lexical_for_testing(strategy: str,
-                              model: PreTrainedModel,
+def setup_lexical_for_testing(strategy: str, model: PreTrainedModel,
                               tokenizer: PreTrainedTokenizer,
                               target_lexical: str):
     """
@@ -82,8 +77,7 @@ def setup_lexical_for_testing(strategy: str,
 
     if strategy == 'target-lexical':
         model.set_input_embeddings(
-            new_like(model.get_input_embeddings(), target_lexical_state)
-        )
+            new_like(model.get_input_embeddings(), target_lexical_state))
     elif strategy == 'target-lexical-original-special':
         assert model.get_input_embeddings().embedding_dim == \
             target_lexical_state['weight'].shape[1]
@@ -98,8 +92,8 @@ def setup_lexical_for_testing(strategy: str,
         target_weights = target_lexical_state['weight']
 
         tobe = SlicedEmbedding(model_weights[:bert_special_tokens_cut],
-                               target_weights[bert_special_tokens_cut:],
-                               True, True)  # For testing, both are freezed
+                               target_weights[bert_special_tokens_cut:], True,
+                               True)  # For testing, both are freezed
 
         model.set_input_embeddings(tobe)
     else:
@@ -115,7 +109,8 @@ def new_like(base_embedding: Embedding, state_dict: dict):
     vocab_size = state_dict['weight'].shape[0]
     embedding_dim = state_dict['weight'].shape[1]
 
-    clone = Embedding(vocab_size, embedding_dim,
+    clone = Embedding(vocab_size,
+                      embedding_dim,
                       padding_idx=base_embedding.padding_idx,
                       max_norm=base_embedding.max_norm,
                       norm_type=base_embedding.norm_type,
@@ -210,8 +205,10 @@ class SlicedEmbedding(torch.nn.Module):
 
         scale_grad_by_freq = embedding.scale_grad_by_freq
 
-        sliced = SlicedEmbedding(weigths_a, weigths_b,
-                                 freeze_first_part, freeze_second_part,
+        sliced = SlicedEmbedding(weigths_a,
+                                 weigths_b,
+                                 freeze_first_part,
+                                 freeze_second_part,
                                  padding_idx=embedding.padding_idx,
                                  max_norm=embedding.max_norm,
                                  norm_type=embedding.norm_type,
@@ -219,3 +216,53 @@ class SlicedEmbedding(torch.nn.Module):
                                  scale_grad_by_freq=scale_grad_by_freq)
 
         return sliced
+
+
+class SlicedOutputEmbedding(torch.nn.Module):
+    """
+    Represents a wrapper around BERT Output Embeddings with the ability
+    to partially freeze the weights associated with the vocabulary.
+    """
+    def __init__(self,
+                 original_output: torch.nn.Linear,
+                 slice_upperbound: int,
+                 freeze_first: bool = False,
+                 freeze_second: bool = False) -> None:
+        """
+        Initialize the wrapper over an `original_output` embedding layer.
+        """
+        logger.debug(
+            f'Original embedding is of shape {original_output.weight.shape}.')
+
+        super().__init__()
+
+        original_weight = original_output.weight
+        original_bias = original_output.bias
+
+        first_req_grad = freeze_first is False
+        second_req_grad = freeze_second is False
+
+        first_slice = original_weight.data[:slice_upperbound]
+        second_slice = original_weight.data[slice_upperbound:]
+
+        self.first_slice = torch.nn.Parameter(first_slice, first_req_grad)
+        self.second_slice = torch.nn.Parameter(second_slice, second_req_grad)
+
+        if original_bias is not None:
+            bias_first_slice = original_bias.data[:slice_upperbound]
+            bias_second_slice = original_bias.data[slice_upperbound:]
+
+            self.first_bias = torch.nn.Parameter(bias_first_slice,
+                                                 first_req_grad)
+
+            self.second_bias = torch.nn.Parameter(bias_second_slice,
+                                                  second_req_grad)
+        else:
+            self.register_parameter('first_bias', None)
+            self.register_parameter('second_bias', None)
+
+    def forward(self, input):
+        first = F.linear(input, self.first_slice, self.first_bias)
+        second = F.linear(input, self.second_slice, self.second_bias)
+
+        return torch.stack((first, second))
