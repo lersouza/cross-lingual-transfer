@@ -265,4 +265,4 @@ class SlicedOutputEmbedding(torch.nn.Module):
         first = F.linear(input, self.first_slice, self.first_bias)
         second = F.linear(input, self.second_slice, self.second_bias)
 
-        return torch.stack((first, second), dim=-1)
+        return torch.cat((first, second), dim=-1)
