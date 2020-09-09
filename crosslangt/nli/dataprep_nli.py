@@ -116,14 +116,16 @@ NLI_DATASETS = {
         'zip': 'https://github.com/lersouza/cross-lingual-transfer/raw/'
                'master/datasets/ASSIN2.zip',
         'train': 'ASSIN2/assin2-train-only.xml',
-        'eval': 'ASSIN2/assin2-test.xml',
+        'eval': 'ASSIN2/assin2-dev.xml',
+        'test': 'ASSIN2/assin2-test.xml',
         'processor': ASSIN2Processor,
     },
     'assin2-mnlialigned': {
         'zip': 'https://github.com/lersouza/cross-lingual-transfer/raw/'
                'master/datasets/ASSIN2.zip',
         'train': 'ASSIN2/assin2-train-only.xml',
-        'eval': 'ASSIN2/assin2-test.xml',
+        'eval': 'ASSIN2/assin2-dev.xml',
+        'test': 'ASSIN2/assin2-test.xml',
         'processor': ASSIN2MnliAlignedProcessor,
     },
     'mnli-nocontradiction': {
