@@ -74,9 +74,6 @@ class ASSIN2Processor(DataProcessor):
             if entailment not in self.get_labels():
                 continue  # Ignoring labels that are not in MNLI dataset
 
-            # Map neutral to None, so it is aligned with Mnli
-            entailment = 'neutral' if entailment == 'none' else entailment
-
             for child in pair:
                 if child.tag == 't':
                     sentence1 = child.text
