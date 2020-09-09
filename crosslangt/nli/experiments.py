@@ -1,17 +1,19 @@
-from crosslangt.lexical import setup_lexical_for_testing
-from torch.utils import data
-from torch.utils.data.dataloader import DataLoader
-from transformers.tokenization_utils import PreTrainedTokenizer
-from crosslangt.nli.dataprep_nli import load_nli_dataset, prepare_nli_dataset
-import re
 import os
+import re
+import torch
+
 from pathlib import Path
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
-from torch import exp
+from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
+from torch.utils.data.dataloader import DataLoader
 
-from crosslangt.models import NLIModel
+from crosslangt.nli.datasets import NLIDataset
+from crosslangt.nli.dataprep_nli import prepare_nli_dataset
+from crosslangt.nli.modeling_nli import NLIFinetuneModel
+from crosslangt.pretrain.models import LexicalTrainingModel
+
 
 DEFAULT_DATA_DIR = './data'
 DEFAULT_EXPERIMENT_LOCATION = './output'
@@ -19,8 +21,18 @@ DEFAULT_EXPERIMENT_LOCATION = './output'
 NLI_CHECKPOINT_FORMAT = '{epoch}-{loss:.2f}'
 
 
+def get_logger(experiment_name: str,
+               experiment_base_path: str,
+               version: int = 0):
+    logging_path = os.path.join(experiment_base_path, 'logs')
+    logger = TensorBoardLogger(logging_path, experiment_name, version)
+
+    return logger
+
+
 def get_model_checkpoint_callback(experiment_path: str,
                                   checkpoint_file_format: str):
+
     callback = ModelCheckpoint(os.path.join(experiment_path,
                                             checkpoint_file_format),
                                save_top_k=-1,
@@ -50,7 +62,7 @@ def retrieve_last_checkpoint(experiment_path: str):
     return by_epoch[0]
 
 
-def run_nli_training(experiment_name: str,
+def run_nli_finetune(experiment_name: str,
                      pretrained_model: str,
                      num_classes: int,
                      train_lexical_strategy: str,
@@ -65,7 +77,8 @@ def run_nli_training(experiment_name: str,
                      output_path: str = DEFAULT_EXPERIMENT_LOCATION,
                      precision: int = 32,
                      seed: int = 123,
-                     tokenizer_name: str = None):
+                     tokenizer_name: str = None,
+                     experiment_version=0):
 
     seed_everything(seed)
 
@@ -77,22 +90,25 @@ def run_nli_training(experiment_name: str,
 
     if last_checkpoint is not None:
         # We first try to recover the experiment from an unfinished run
-        model = NLIModel.load_from_checkpoint(last_checkpoint)
+        model = NLIFinetuneModel.load_from_checkpoint(last_checkpoint)
     else:
-        model = NLIModel(pretrained_model=pretrained_model,
-                         num_classes=num_classes,
-                         train_lexical_strategy=train_lexical_strategy,
-                         train_dataset=train_dataset,
-                         eval_dataset=eval_dataset,
-                         data_dir=DEFAULT_DATA_DIR,
-                         batch_size=batch_size,
-                         max_seq_length=max_seq_length,
-                         tokenizer_name=tokenizer_name)
+        model = NLIFinetuneModel(pretrained_model=pretrained_model,
+                                 num_classes=num_classes,
+                                 train_lexical_strategy=train_lexical_strategy,
+                                 train_dataset=train_dataset,
+                                 eval_dataset=eval_dataset,
+                                 data_dir=DEFAULT_DATA_DIR,
+                                 batch_size=batch_size,
+                                 max_seq_length=max_seq_length,
+                                 tokenizer_name=tokenizer_name)
 
     model_checkpoint = get_model_checkpoint_callback(base_exp_path,
                                                      NLI_CHECKPOINT_FORMAT)
 
+    logger = get_logger(experiment_name, base_exp_path, experiment_version)
+
     trainer = Trainer(resume_from_checkpoint=last_checkpoint,
+                      logger=logger,
                       gpus=gpus,
                       tpu_cores=tpu_cores,
                       checkpoint_callback=model_checkpoint,
@@ -106,51 +122,78 @@ def run_nli_training(experiment_name: str,
     return trainer, model
 
 
-def test_nli_checkpoint(test_experiment_key: str,
+def prepare_model_for_testing(checkpoint_path: str,
+                              lexical_checkpoint: str = None,
+                              always_use_finetuned_lexical: bool = False):
+
+    model = NLIFinetuneModel.load_from_checkpoint(checkpoint_path)
+    model_training = model.hparams.train_lexical_strategy
+
+    if model_training == 'none' or always_use_finetuned_lexical is True:
+        return model
+
+    lexical_model = LexicalTrainingModel.load_from_checkpoint(
+        lexical_checkpoint)
+
+    # Setup Target Lexical Tokenizer
+    model.tokenizer = lexical_model.tokenizer
+
+    if model_training == 'freeze-all':
+        model.bert.set_input_embeddings(
+            lexical_model.bert.get_input_embeddings())
+
+    elif model_training == 'freeze-nonspecial':
+        bert_special_tokens_cut = max(model.tokenizer.all_special_ids) + 1
+
+        model_weights = model.bert.get_input_embeddings().weight
+        target_weights = lexical_model.bert.get_input_embeddings().weight
+
+        tobe = SlicedEmbedding(model_weights[:bert_special_tokens_cut],
+                               target_weights[bert_special_tokens_cut:], True,
+                               True)  # For testing, both are freezed
+
+        model.set_input_embeddings(tobe)
+
+    return model
+
+
+def test_nli_checkpoint(testing_key: str,
                         checkpoint_path: str,
-                        test_dataset: str,
-                        max_seq_length: int,
-                        test_lexical_strategy: str,
-                        test_lexical_path: str = None,
-                        test_tokenizer_name: str = None,
-                        prepare_data: bool = True,
+                        data_dir: str,
+                        dataset_name: str,
+                        dataset_split: str,
                         gpus: int = 1,
-                        tpu_cores: int = None,
-                        precision: int = 32,
+                        always_use_finetuned_lexical: bool = False,
+                        lexical_checkpoint: str = None,
+                        test_output_path: str = DEFAULT_EXPERIMENT_LOCATION,
                         seed: int = 123):
 
     seed_everything(seed)
 
-    model = NLIModel.load_from_checkpoint(checkpoint_path)
-    tokenizer = PreTrainedTokenizer.from_pretrained(
-        test_tokenizer_name or model.hparams.pretrained_model)
+    model = prepare_model_for_testing(
+        checkpoint_path=checkpoint_path,
+        lexical_checkpoint=lexical_checkpoint,
+        always_use_finetuned_lexical=always_use_finetuned_lexical)
 
-    if prepare_data is True:
+    dataset_path = prepare_nli_dataset(
+        dataset=dataset_name,
+        split=dataset_split,
+        data_dir=data_dir,
+        tokenizer=model.tokenizer,
+        max_seq_length=model.hparams.max_seq_length,
+        features_key=testing_key)
 
-        prepare_nli_dataset(test_dataset,
-                            'eval',
-                            DEFAULT_DATA_DIR,
-                            tokenizer,
-                            max_seq_length,
-                            test_experiment_key)
-
-    dataset = load_nli_dataset(DEFAULT_DATA_DIR,
-                               test_dataset,
-                               'eval',
-                               max_seq_length,
-                               test_experiment_key)
-
-    data_loader = DataLoader(dataset, shuffle=False, num_workers=8)
-
-    # Apply the strategy for testing
-    setup_lexical_for_testing(test_lexical_strategy, model.bert, tokenizer,
-                              test_lexical_path)
+    dataset = NLIDataset(torch.load(dataset_path))
+    data_loader = DataLoader(dataset,
+                             batch_size=model.hparams.batch_size,
+                             shuffle=False,
+                             num_workers=8)
 
     trainer = Trainer(gpus=gpus,
-                      tpu_cores=tpu_cores,
-                      precision=precision,
-                      deterministic=True)
+                      logger=get_logger(testing_key, test_output_path))
 
-    trainer.test(model, data_loader)
+    metrics = trainer.test(model, test_dataloaders=data_loader)
 
-    return trainer, model
+    torch.save(metrics, os.path.join(test_output_path, testing_key))
+
+    print(metrics)

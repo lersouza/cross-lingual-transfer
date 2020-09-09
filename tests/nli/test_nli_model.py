@@ -13,7 +13,9 @@ BASE_NAME = 'crosslangt.nli.modeling_nli'
 @patch(BASE_NAME + '.AutoModelForSequenceClassification.from_pretrained')
 @patch(BASE_NAME + '.AutoConfig.from_pretrained')
 class NLIModelTestCase(TestCase):
-    def test_model_load(self, config_mock, model_mock, tok_mock):
+
+    @patch(BASE_NAME + '.setup_lexical_for_training')
+    def test_model_load(self, setup_mock, config_mock, model_mock, tok_mock):
         config, pretrained, tokenizer = self.__setup_mocks(
             config_mock, model_mock, tok_mock)
 
@@ -34,38 +36,10 @@ class NLIModelTestCase(TestCase):
         self.assertEqual(model.hparams.pretrained_model, 'bert-base-cased')
         self.assertIsInstance(model.metric, Accuracy)
 
-        self.assertEqual(model.model, pretrained)
+        self.assertEqual(model.bert, pretrained)
         self.assertEqual(model.tokenizer, tokenizer)
 
-    @patch(BASE_NAME + '.load_nli_dataset')
-    @patch(BASE_NAME + '.setup_lexical_for_training')
-    def test_setup(self, setup_mock, load_mock, config_mock, model_mock,
-                   tok_mock):
-
-        _, pretrained, tokenizer = self.__setup_mocks(config_mock, model_mock,
-                                                      tok_mock)
-
-        load_mock.return_value = 'some_data_set'
-
-        model = NLIFinetuneModel(pretrained_model='bert-base-cased',
-                                 num_classes=3,
-                                 train_lexical_strategy='my-strategy',
-                                 train_dataset='mnli',
-                                 eval_dataset='mnli-for-eval',
-                                 data_dir='/data',
-                                 batch_size=32,
-                                 max_seq_length=128)
-
-        model.setup('fit')
-
-        setup_mock.assert_called_with('my-strategy', pretrained, tokenizer)
-        load_mock.assert_has_calls([
-            call('/data', 'mnli', 'train', 128, 'bert-base-cased.'),
-            call('/data', 'mnli-for-eval', 'eval', 128, 'bert-base-cased.')
-        ])
-
-        self.assertEqual(model.train_dataset, 'some_data_set')
-        self.assertEqual(model.eval_dataset, 'some_data_set')
+        setup_mock.assert_called_with('none', pretrained, tokenizer)
 
     def test_train_step(self, config_mock, model_mock, tok_mock):
         _, pretrained, tokenizer = self.__setup_mocks(config_mock, model_mock,
@@ -73,7 +47,7 @@ class NLIModelTestCase(TestCase):
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
-                                 train_lexical_strategy='my-strategy',
+                                 train_lexical_strategy='none',
                                  train_dataset='mnli',
                                  eval_dataset='mnli-for-eval',
                                  data_dir='/data',
@@ -97,7 +71,7 @@ class NLIModelTestCase(TestCase):
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
-                                 train_lexical_strategy='my-strategy',
+                                 train_lexical_strategy='none',
                                  train_dataset='mnli',
                                  eval_dataset='mnli-for-eval',
                                  data_dir='/data',
@@ -121,7 +95,7 @@ class NLIModelTestCase(TestCase):
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
-                                 train_lexical_strategy='my-strategy',
+                                 train_lexical_strategy='none',
                                  train_dataset='mnli',
                                  eval_dataset='mnli-for-eval',
                                  data_dir='/data',
@@ -145,7 +119,7 @@ class NLIModelTestCase(TestCase):
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
-                                 train_lexical_strategy='my-strategy',
+                                 train_lexical_strategy='none',
                                  train_dataset='mnli',
                                  eval_dataset='mnli-for-eval',
                                  data_dir='/data',
@@ -186,7 +160,7 @@ class NLIModelTestCase(TestCase):
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
-                                 train_lexical_strategy='my-strategy',
+                                 train_lexical_strategy='none',
                                  train_dataset='mnli',
                                  eval_dataset='mnli-for-eval',
                                  data_dir='/data',
@@ -234,7 +208,7 @@ class NLIModelTestCase(TestCase):
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
-                                 train_lexical_strategy='my-strategy',
+                                 train_lexical_strategy='none',
                                  train_dataset='mnli',
                                  eval_dataset='mnli-for-eval',
                                  data_dir='/data',
@@ -252,18 +226,24 @@ class NLIModelTestCase(TestCase):
             model.validation_step(batch, 1)
             logger.experiment.add_text.assert_has_calls([
                 call.__bool__(),
-                call('nli-finetune', 'a a a\tb b\t0\t0'),
-                call('nli-finetune', 'a a a\tb b\t1\t0')
+                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
+                     'expected: 0. predicted: 0.'),
+                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
+                     'expected: 1. predicted: 0.')
             ])
 
             model.test_step(batch, 1)
             logger.experiment.add_text.assert_has_calls([
                 call.__bool__(),
-                call('nli-finetune', 'a a a\tb b\t0\t0'),
-                call('nli-finetune', 'a a a\tb b\t1\t0'),
+                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
+                     'expected: 0. predicted: 0.'),
+                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
+                     'expected: 1. predicted: 0.'),
                 call.__bool__(),
-                call('nli-finetune', 'a a a\tb b\t0\t0'),
-                call('nli-finetune', 'a a a\tb b\t1\t0')
+                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
+                     'expected: 0. predicted: 0.'),
+                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
+                     'expected: 1. predicted: 0.')
             ])
 
     def __get_batch(self):

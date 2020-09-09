@@ -2,102 +2,19 @@ import logging
 import torch
 import torch.nn.functional as F
 
+from typing import Dict, Union
+
 from torch import Tensor
 from torch.nn.modules.sparse import Embedding
-from transformers import PreTrainedTokenizer, PreTrainedModel
+from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
-training_lexical_strategies = [
-    'freeze-all', 'freeze-special', 'freeze-nonspecial', 'none'
-]
 
 testing_lexical_strategies = [
     'original', 'target-lexical-original-special', 'target-lexical'
 ]
-
-
-def setup_lexical_for_training(strategy, model: PreTrainedModel,
-                               tokenizer: PreTrainedTokenizer):
-    """ Setups the lexical part of `model` based on `strategy`. """
-    assert strategy in training_lexical_strategies
-
-    original_embeddings = model.get_input_embeddings()
-    tobe_embeddings = None
-
-    # We cut on the last kwown special token
-    # So we get the latest index + 1
-    # (for instance, if the last one is 103, we get 104 ).
-    # This is because SlicedEmbeddings cut on [:cut].
-    bert_special_tokens_cut = sorted(tokenizer.all_special_ids)[-1] + 1
-
-    if strategy == 'freeze-special':
-        tobe_embeddings = SlicedEmbedding.slice(original_embeddings,
-                                                bert_special_tokens_cut,
-                                                freeze_first_part=True,
-                                                freeze_second_part=False)
-    elif strategy == 'freeze-nonspecial':
-        tobe_embeddings = SlicedEmbedding.slice(original_embeddings,
-                                                bert_special_tokens_cut,
-                                                freeze_first_part=False,
-                                                freeze_second_part=True)
-    elif strategy == 'freeze-all':
-        tobe_embeddings = original_embeddings
-        tobe_embeddings.weight.requires_grad = False
-    else:
-        tobe_embeddings = original_embeddings
-
-    model.set_input_embeddings(tobe_embeddings)
-
-
-def setup_lexical_for_testing(strategy: str, model: PreTrainedModel,
-                              tokenizer: PreTrainedTokenizer,
-                              target_lexical: str):
-    """
-    Setup the model lexical part according to `strategy`.
-    Strategy can be:
-
-    - original: The model's lexical will be used as is.
-    - target_lexical_full: The lexical located at `target_lexical`
-                           will be used in model\'s, including special tokens.
-    - target_lexical_keep_special: The lexical located at `target_lexical`
-                                   will be used, but the model\'s
-                                   embeddings for special tokens
-                                   will be preserved.
-    """
-    assert strategy in testing_lexical_strategies
-    assert model is not None
-    assert tokenizer is not None
-
-    if strategy == 'original':
-        return  # Nothing to do here
-
-    target_lexical_state = torch.load(target_lexical)
-
-    if strategy == 'target-lexical':
-        model.set_input_embeddings(
-            new_like(model.get_input_embeddings(), target_lexical_state))
-    elif strategy == 'target-lexical-original-special':
-        assert model.get_input_embeddings().embedding_dim == \
-            target_lexical_state['weight'].shape[1]
-
-        # We cut on the last kwown special token
-        # So we get the latest index + 1
-        # (for instance, if the last one is 103, we get 104 ).
-        # This is because SlicedEmbeddings cut on [:cut].
-        bert_special_tokens_cut = sorted(tokenizer.all_special_ids)[-1] + 1
-
-        model_weights = model.get_input_embeddings().weight
-        target_weights = target_lexical_state['weight']
-
-        tobe = SlicedEmbedding(model_weights[:bert_special_tokens_cut],
-                               target_weights[bert_special_tokens_cut:], True,
-                               True)  # For testing, both are freezed
-
-        model.set_input_embeddings(tobe)
-    else:
-        raise NotImplementedError(f'strategy {strategy} is not implemented')
 
 
 def new_like(base_embedding: Embedding, state_dict: dict):
@@ -266,3 +183,105 @@ class SlicedOutputEmbedding(torch.nn.Module):
         second = F.linear(input, self.second_slice, self.second_bias)
 
         return torch.cat((first, second), dim=-1)
+
+
+def slice_lexical_embedding(model: PreTrainedModel,
+                            tokenizer: PreTrainedTokenizer,
+                            freeze_first: bool,
+                            freeze_second: bool):
+    # We cut on the last kwown special token
+    # So we get the latest index + 1
+    # (for instance, if the last one is 103, we get 104 ).
+    # This is because SlicedEmbeddings cut on [:cut].
+    bert_special_tokens_cut = max(tokenizer.all_special_ids) + 1
+    original_embeddings = model.get_input_embeddings()
+
+    tobe_embeddings = SlicedEmbedding.slice(original_embeddings,
+                                            bert_special_tokens_cut,
+                                            freeze_first_part=freeze_first,
+                                            freeze_second_part=freeze_second)
+
+    model.set_input_embeddings(tobe_embeddings)
+
+
+def freeze_special_tokens(model: PreTrainedModel,
+                          tokenizer: PreTrainedTokenizer):
+
+    slice_lexical_embedding(model, tokenizer, True, False)
+
+
+def freeze_non_special_tokens(model: PreTrainedModel,
+                              tokenizer: PreTrainedTokenizer):
+
+    slice_lexical_embedding(model, tokenizer, False, True)
+
+
+def freeze_all_tokens(model: PreTrainedModel, tokenizer: PreTrainedTokenizer):
+    model.get_input_embeddings().weight.requires_grad = False
+
+
+def setup_lexical_for_testing(strategy: str,
+                              model: PreTrainedModel,
+                              tokenizer: PreTrainedTokenizer,
+                              target_lexical: Union[str, Dict]):
+    """
+    Setup the model lexical part according to `strategy`.
+    Strategy can be:
+
+    - original: The model's lexical will be used as is.
+    - target_lexical_full: The lexical located at `target_lexical`
+                           will be used in model\'s, including special tokens.
+    - target_lexical_keep_special: The lexical located at `target_lexical`
+                                   will be used, but the model\'s
+                                   embeddings for special tokens
+                                   will be preserved.
+    """
+    assert strategy in testing_lexical_strategies
+    assert model is not None
+    assert tokenizer is not None
+
+    if strategy == 'original':
+        return  # Nothing to do here
+
+    if type(target_lexical) is str:
+        target_lexical = torch.load(target_lexical)
+
+    if strategy == 'target-lexical':
+        model.set_input_embeddings(
+            new_like(model.get_input_embeddings(), target_lexical))
+    elif strategy == 'target-lexical-original-special':
+        assert model.get_input_embeddings().embedding_dim == \
+            target_lexical['weight'].shape[1]
+
+        # We cut on the last kwown special token
+        # So we get the latest index + 1
+        # (for instance, if the last one is 103, we get 104 ).
+        # This is because SlicedEmbeddings cut on [:cut].
+        bert_special_tokens_cut = sorted(tokenizer.all_special_ids)[-1] + 1
+
+        model_weights = model.get_input_embeddings().weight
+        target_weights = target_lexical['weight']
+
+        tobe = SlicedEmbedding(model_weights[:bert_special_tokens_cut],
+                               target_weights[bert_special_tokens_cut:], True,
+                               True)  # For testing, both are freezed
+
+        model.set_input_embeddings(tobe)
+    else:
+        raise NotImplementedError(f'strategy {strategy} is not implemented')
+
+
+strategies = {
+    'freeze-special': freeze_special_tokens,
+    'freeze-all': freeze_all_tokens,
+    'freeze-nonspecial': freeze_non_special_tokens,
+}
+
+
+def setup_lexical_for_training(strategy, model: PreTrainedModel,
+                               tokenizer: PreTrainedTokenizer):
+    """ Setups the lexical part of `model` based on `strategy`. """
+    strategy_fn = strategies.get(strategy, None)
+
+    if strategy_fn is not None:
+        strategy_fn(model, tokenizer)

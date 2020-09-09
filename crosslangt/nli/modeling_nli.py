@@ -1,7 +1,6 @@
-import os
-from typing import Tuple
-
+import logging
 import torch
+
 from pytorch_lightning import LightningModule
 from pytorch_lightning.metrics import Accuracy
 from torch.optim import Adam
@@ -9,8 +8,11 @@ from torch.utils.data.dataloader import DataLoader
 from transformers import (AutoConfig, AutoModelForSequenceClassification,
                           AutoTokenizer)
 
-from crosslangt.nli import (load_nli_dataset, prepare_nli_dataset)
 from crosslangt.lexical import setup_lexical_for_training
+from crosslangt.nli import load_nli_dataset, prepare_nli_dataset
+from crosslangt.nli.dataprep_nli import NLI_DATASETS
+
+logger = logging.getLogger(__name__)
 
 
 class NLIFinetuneModel(LightningModule):
@@ -19,10 +21,10 @@ class NLIFinetuneModel(LightningModule):
                  num_classes: int,
                  train_lexical_strategy: str,
                  train_dataset: str,
-                 eval_dataset: str,
                  data_dir: str,
                  batch_size: int,
                  max_seq_length: int,
+                 eval_dataset: str = None,
                  tokenizer_name: str = None,
                  **kwargs) -> None:
 
@@ -30,21 +32,34 @@ class NLIFinetuneModel(LightningModule):
 
         self.save_hyperparameters()
 
+        # Load model and tokenizer
         self.config = AutoConfig.from_pretrained(pretrained_model,
                                                  num_labels=num_classes)
 
-        self.model = AutoModelForSequenceClassification.from_pretrained(
+        self.bert = AutoModelForSequenceClassification.from_pretrained(
             pretrained_model, config=self.config)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.hparams.tokenizer_name or self.hparams.pretrained_model)
 
+        # Setup lexical for training
+        setup_lexical_for_training(train_lexical_strategy, self.bert,
+                                   self.tokenizer)
+
+        # Using accuracy metric
         self.metric = Accuracy(num_classes=num_classes)
 
+        # For compability, we keep eval_dataset as None by default
+        # If not defined, we'll use the same as train_dataset
+        # The split is defined later
+        self.train_dataset_name = train_dataset
+        self.eval_dataset_name = eval_dataset or train_dataset
+
+        # Define Keys for dataset generation
         self.__set_feature_keys()
 
     def forward(self, **inputs):
-        return self.model(**inputs)
+        return self.bert(**inputs)
 
     def configure_optimizers(self):
         return Adam(self.parameters(), lr=2e-5)
@@ -61,8 +76,12 @@ class NLIFinetuneModel(LightningModule):
         loss, accuracy = self._run_step(batch, batch_idx, True)
 
         logs = {'val_acc': accuracy, 'val_loss': loss}
-        return {'val_loss': loss, 'val_acc': accuracy, 'log': logs,
-                'progress_bar': logs}
+        return {
+            'val_loss': loss,
+            'val_acc': accuracy,
+            'log': logs,
+            'progress_bar': logs
+        }
 
     def validation_epoch_end(self, outputs):
         return self._eval_epoch_end(outputs, 'val_')
@@ -71,8 +90,12 @@ class NLIFinetuneModel(LightningModule):
         loss, accuracy = self._run_step(batch, batch_idx, True)
 
         logs = {'test_acc': accuracy, 'test_loss': loss}
-        return {'test_loss': loss, 'test_acc': accuracy, 'log': logs,
-                'progress_bar': logs}
+        return {
+            'test_loss': loss,
+            'test_acc': accuracy,
+            'log': logs,
+            'progress_bar': logs
+        }
 
     def test_epoch_end(self, outputs):
         return self._eval_epoch_end(outputs, 'test_')
@@ -109,57 +132,47 @@ class NLIFinetuneModel(LightningModule):
         mean_accuracy = accuracies.mean()
         mean_loss = losses.mean()
 
-        results_dict = {f'{prefix}avg_accuracy': mean_accuracy,
-                        f'{prefix}avg_loss': mean_loss}
+        results_dict = {
+            f'{prefix}avg_accuracy': mean_accuracy,
+            f'{prefix}avg_loss': mean_loss
+        }
 
         return {**results_dict, 'log': results_dict}
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(self.train_dataset,
+        dataset = load_nli_dataset(self.hparams.data_dir,
+                                   self.train_dataset_name, 'train',
+                                   self.hparams.max_seq_length, self.train_key)
+
+        return DataLoader(dataset,
                           self.hparams.batch_size,
                           shuffle=True,
                           num_workers=8)
 
     def val_dataloader(self):
-        return DataLoader(self.eval_dataset,
+        dataset = load_nli_dataset(self.hparams.data_dir,
+                                   self.eval_dataset_name, 'eval',
+                                   self.hparams.max_seq_length, self.train_key)
+
+        return DataLoader(dataset,
                           self.hparams.batch_size,
                           shuffle=False,
                           num_workers=8)
 
     def prepare_data(self) -> None:
-        prepare_nli_dataset(dataset=self.hparams.train_dataset,
+        prepare_nli_dataset(dataset=self.train_dataset_name,
                             split='train',
                             data_dir=self.hparams.data_dir,
                             tokenizer=self.tokenizer,
                             max_seq_length=self.hparams.max_seq_length,
-                            features_key=self.train_key,
-                            force=True)
+                            features_key=self.train_key)
 
-        prepare_nli_dataset(dataset=self.hparams.eval_dataset,
+        prepare_nli_dataset(dataset=self.eval_dataset_name,
                             split='eval',
                             data_dir=self.hparams.data_dir,
                             tokenizer=self.tokenizer,
                             max_seq_length=self.hparams.max_seq_length,
-                            features_key=self.train_key,
-                            force=True)
-
-    def setup(self, stage: str):
-        setup_lexical_for_training(self.hparams.train_lexical_strategy,
-                                   self.model, self.tokenizer)
-
-        self.train_dataset = load_nli_dataset(
-            self.hparams.data_dir,
-            self.hparams.train_dataset,
-            'train',
-            self.hparams.max_seq_length,
-            self.train_key)
-
-        self.eval_dataset = load_nli_dataset(
-            self.hparams.data_dir,
-            self.hparams.eval_dataset,
-            'eval',
-            self.hparams.max_seq_length,
-            self.train_key)
+                            features_key=self.train_key)
 
     def __set_feature_keys(self):
         model_name = self.hparams.pretrained_model.split('/').pop()
@@ -173,12 +186,16 @@ class NLIFinetuneModel(LightningModule):
            and self.logger.experiment.add_text:
 
             for i, input_ids in enumerate(input_ids.tolist()):
+
                 decoded = self.tokenizer.decode(input_ids)
                 sentences = decoded.split(self.tokenizer.sep_token)
 
                 self.logger.experiment.add_text(
-                    'nli-finetune',
-                    f'{sentences[0].strip()}\t'
-                    f'{sentences[1].strip()}\t'
-                    f'{labels[i]}\t{predicted.tolist()[i]}'
-                )
+                    'nli-finetune', f'nli premise: {sentences[0].strip()}. '
+                    f'hypothesis: {sentences[1].strip()}. '
+                    f'expected: {labels[i]}. '
+                    f'predicted: {predicted.tolist()[i]}.')
+
+        else:
+            logger.warn(
+                'No Logger has been specified. Samples will not be available.')
