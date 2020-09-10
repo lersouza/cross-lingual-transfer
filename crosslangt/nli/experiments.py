@@ -16,18 +16,17 @@ from crosslangt.pretrain.models import LexicalTrainingModel
 
 
 DEFAULT_DATA_DIR = './data'
+DEFAULT_LOG_DIR = './logs'
 DEFAULT_EXPERIMENT_LOCATION = './output'
 
 NLI_CHECKPOINT_FORMAT = '{epoch}-{loss:.2f}'
 
 
 def get_logger(experiment_name: str,
-               experiment_base_path: str,
-               version: int = 0):
-    logging_path = os.path.join(experiment_base_path, 'logs')
-    logger = TensorBoardLogger(logging_path, experiment_name, version)
+               logging_path: str,
+               version: int = None):
 
-    return logger
+    return TensorBoardLogger(logging_path, experiment_name, version)
 
 
 def get_model_checkpoint_callback(experiment_path: str,
@@ -78,7 +77,8 @@ def run_nli_finetune(experiment_name: str,
                      precision: int = 32,
                      seed: int = 123,
                      tokenizer_name: str = None,
-                     experiment_version=0):
+                     experiment_version: int = None,
+                     log_path: str = DEFAULT_LOG_DIR):
 
     seed_everything(seed)
 
@@ -105,7 +105,7 @@ def run_nli_finetune(experiment_name: str,
     model_checkpoint = get_model_checkpoint_callback(base_exp_path,
                                                      NLI_CHECKPOINT_FORMAT)
 
-    logger = get_logger(experiment_name, base_exp_path, experiment_version)
+    logger = get_logger(experiment_name, log_path, experiment_version)
 
     trainer = Trainer(resume_from_checkpoint=last_checkpoint,
                       logger=logger,
@@ -166,7 +166,9 @@ def test_nli_checkpoint(testing_key: str,
                         always_use_finetuned_lexical: bool = False,
                         lexical_checkpoint: str = None,
                         test_output_path: str = DEFAULT_EXPERIMENT_LOCATION,
-                        seed: int = 123):
+                        seed: int = 123,
+                        log_path: str = DEFAULT_LOG_DIR,
+                        cleanup: bool = True):
 
     seed_everything(seed)
 
@@ -190,10 +192,14 @@ def test_nli_checkpoint(testing_key: str,
                              num_workers=8)
 
     trainer = Trainer(gpus=gpus,
-                      logger=get_logger(testing_key, test_output_path))
+                      logger=get_logger(testing_key, log_path))
 
     metrics = trainer.test(model, test_dataloaders=data_loader)
 
-    torch.save(metrics, os.path.join(test_output_path, testing_key))
+    # Do some cleanup, since the model and dataset uses a lot of memory
+    if cleanup is True:
+        del model
+        del trainer
+        del dataset
 
-    print(metrics)
+    return metrics
