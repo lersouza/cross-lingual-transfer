@@ -9,6 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
 from torch.utils.data.dataloader import DataLoader
 
+from crosslangt.lexical import SlicedEmbedding
 from crosslangt.nli.datasets import NLIDataset
 from crosslangt.nli.dataprep_nli import prepare_nli_dataset
 from crosslangt.nli.modeling_nli import NLIFinetuneModel
@@ -143,13 +144,18 @@ def prepare_model_for_testing(checkpoint_path: str,
             lexical_model.bert.get_input_embeddings())
 
     elif model_training == 'freeze-nonspecial':
-        bert_special_tokens_cut = max(model.tokenizer.all_special_ids) + 1
+        # In thise case, embedding should be a sliced embedding
+        # So, we just take the parts we want to form a new Embedding
 
-        model_weights = model.bert.get_input_embeddings().weight
-        target_weights = lexical_model.bert.get_input_embeddings().weight
+        # Special tokens from the finetuned model
+        model_weights = model.bert.get_input_embeddings().get_first_weigths()
 
-        tobe = SlicedEmbedding(model_weights[:bert_special_tokens_cut],
-                               target_weights[bert_special_tokens_cut:], True,
+        # Other tokens (language specific) from the lexical aligned model
+        lexical_embeddings = lexical_model.bert.get_input_embeddings()
+        target_weights = lexical_embeddings.get_second_weigths()
+
+        tobe = SlicedEmbedding(model_weights,
+                               target_weights, True,
                                True)  # For testing, both are freezed
 
         model.set_input_embeddings(tobe)

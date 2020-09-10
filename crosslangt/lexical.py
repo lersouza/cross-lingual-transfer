@@ -80,6 +80,12 @@ class SlicedEmbedding(torch.nn.Module):
 
         self.embedding_dim = weigths_a.shape[1]
 
+    def get_first_weigths(self):
+        return self.first_embedding.weight
+
+    def get_second_weigths(self):
+        return self.second_embedding.weight
+
     def forward(self, batch: Tensor):
         """
         Lookup indexes from `batch` in internal Embeddings table.
