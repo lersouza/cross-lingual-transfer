@@ -1,9 +1,9 @@
 import os
 import re
-from typing import Tuple
 import torch
 
 from pathlib import Path
+from typing import List, Tuple
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -172,7 +172,7 @@ def test_nli_checkpoint(testing_key: str,
                         gpus: int = 1,
                         always_use_finetuned_lexical: bool = False,
                         lexical_checkpoint: str = None,
-                        label_remappings: Tuple[int, int] = None,
+                        label_remappings: List[Tuple[int, int]] = None,
                         test_output_path: str = DEFAULT_EXPERIMENT_LOCATION,
                         seed: int = 123,
                         log_path: str = DEFAULT_LOG_DIR,
