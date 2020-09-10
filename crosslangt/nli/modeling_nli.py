@@ -55,8 +55,14 @@ class NLIFinetuneModel(LightningModule):
         self.train_dataset_name = train_dataset
         self.eval_dataset_name = eval_dataset or train_dataset
 
+        # Custom label mappings
+        self.label_mappings = []
+
         # Define Keys for dataset generation
         self.__set_feature_keys()
+
+    def add_label_mapping(self, model_predicted_label, target_label):
+        self.label_mappings.append((model_predicted_label, target_label))
 
     def forward(self, **inputs):
         return self.bert(**inputs)
@@ -73,7 +79,7 @@ class NLIFinetuneModel(LightningModule):
         return {'loss': loss, 'log': logs, 'progress_bar': tensor_bar}
 
     def validation_step(self, batch, batch_idx):
-        loss, accuracy = self._run_step(batch, batch_idx, True)
+        loss, accuracy = self._run_step(batch, batch_idx, True, True)
 
         logs = {'val_acc': accuracy, 'val_loss': loss}
         return {
@@ -87,7 +93,7 @@ class NLIFinetuneModel(LightningModule):
         return self._eval_epoch_end(outputs, 'val_')
 
     def test_step(self, batch, batch_idx):
-        loss, accuracy = self._run_step(batch, batch_idx, True)
+        loss, accuracy = self._run_step(batch, batch_idx, True, True)
 
         logs = {'test_acc': accuracy, 'test_loss': loss}
         return {
@@ -100,7 +106,12 @@ class NLIFinetuneModel(LightningModule):
     def test_epoch_end(self, outputs):
         return self._eval_epoch_end(outputs, 'test_')
 
-    def _run_step(self, batch, batch_idx, log: bool = False):
+    def _run_step(self,
+                  batch,
+                  batch_idx,
+                  log: bool = False,
+                  enable_label_remapping: bool = False):
+
         inputs = {}
 
         inputs['input_ids'] = batch['input_ids']
@@ -114,6 +125,9 @@ class NLIFinetuneModel(LightningModule):
 
         loss, logits = outputs[:2]
         predicted = torch.argmax(logits, dim=-1)
+
+        if enable_label_remapping is True:
+            predicted = self._apply_label_remapping(predicted)
 
         accuracy = self.metric(predicted, batch['label'])
 
@@ -138,6 +152,17 @@ class NLIFinetuneModel(LightningModule):
         }
 
         return {**results_dict, 'log': results_dict}
+
+    def _apply_label_remapping(self, predicted: torch.Tensor):
+        masks = []
+
+        for original, target in self.label_mappings:
+            masks.append((predicted == original, target))
+
+        for mask, target in masks:
+            predicted.masked_fill_(mask, target)
+
+        return predicted
 
     def train_dataloader(self) -> DataLoader:
         dataset = load_nli_dataset(self.hparams.data_dir,
