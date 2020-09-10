@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Tuple
 import torch
 
 from pathlib import Path
@@ -158,7 +159,7 @@ def prepare_model_for_testing(checkpoint_path: str,
                                target_weights, True,
                                True)  # For testing, both are freezed
 
-        model.set_input_embeddings(tobe)
+        model.bert.set_input_embeddings(tobe)
 
     return model
 
@@ -171,6 +172,7 @@ def test_nli_checkpoint(testing_key: str,
                         gpus: int = 1,
                         always_use_finetuned_lexical: bool = False,
                         lexical_checkpoint: str = None,
+                        label_remappings: Tuple[int, int] = None,
                         test_output_path: str = DEFAULT_EXPERIMENT_LOCATION,
                         seed: int = 123,
                         log_path: str = DEFAULT_LOG_DIR,
@@ -182,6 +184,10 @@ def test_nli_checkpoint(testing_key: str,
         checkpoint_path=checkpoint_path,
         lexical_checkpoint=lexical_checkpoint,
         always_use_finetuned_lexical=always_use_finetuned_lexical)
+
+    if label_remappings is not None:
+        for source, target in label_remappings:
+            model.add_label_mapping(source, target)
 
     dataset_path = prepare_nli_dataset(
         dataset=dataset_name,
