@@ -8,7 +8,7 @@ setup(
     python_requires='>=3.6',
     install_requires=[
         'torch>=1.5',
-        'pytorch-lightning==0.8.5',
+        'pytorch-lightning==0.9.0',
         'transformers==3.0.2',
         'requests',
         'nltk',
