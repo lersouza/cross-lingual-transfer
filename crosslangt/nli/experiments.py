@@ -21,7 +21,7 @@ DEFAULT_DATA_DIR = './data'
 DEFAULT_LOG_DIR = './logs'
 DEFAULT_EXPERIMENT_LOCATION = './output'
 
-NLI_CHECKPOINT_FORMAT = '{epoch}-{loss:.2f}'
+NLI_CHECKPOINT_FORMAT = '{epoch}-{loss:.4f}'
 
 
 def get_logger(experiment_name: str,
