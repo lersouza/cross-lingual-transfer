@@ -204,7 +204,7 @@ class NLIModelTestCase(TestCase):
 
         logger = MagicMock()
         logger.experiment = MagicMock()
-        logger.experiment.add_text = MagicMock()
+        logger.experiment.log_sample = MagicMock()
 
         model = NLIFinetuneModel(pretrained_model='bert-base-cased',
                                  num_classes=3,
@@ -221,30 +221,54 @@ class NLIModelTestCase(TestCase):
 
         with patch.object(model, 'forward', self.__mock_forward):
             model.training_step(batch, 1)
-            logger.experiment.add_text.assert_not_called()
+            logger.experiment.log_sample.assert_not_called()
 
             model.validation_step(batch, 1)
-            logger.experiment.add_text.assert_has_calls([
+            logger.experiment.log_sample.assert_has_calls([
                 call.__bool__(),
-                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
-                     'expected: 0. predicted: 0.'),
-                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
-                     'expected: 1. predicted: 0.')
+                call(tag='nli-finetune',
+                     sample_text='nli premise: a a a. hypothesis: b b. '
+                                 'expected: 0. predicted: 0. '
+                                 'original prediction: 0.',
+                     global_step=0,
+                     epoch=0),
+                call(tag='nli-finetune',
+                     sample_text='nli premise: a a a. hypothesis: b b. '
+                                 'expected: 1. predicted: 0. '
+                                 'original prediction: 0.',
+                     global_step=0,
+                     epoch=0)
             ])
 
             model.test_step(batch, 1)
-            logger.experiment.add_text.assert_has_calls([
+            logger.experiment.log_sample.assert_has_calls([
                 call.__bool__(),
-                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
-                     'expected: 0. predicted: 0.'),
-                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
-                     'expected: 1. predicted: 0.'),
+                call(tag='nli-finetune',
+                     sample_text='nli premise: a a a. hypothesis: b b. '
+                                 'expected: 0. predicted: 0. '
+                                 'original prediction: 0.',
+                     global_step=0,
+                     epoch=0),
+                call(tag='nli-finetune',
+                     sample_text='nli premise: a a a. hypothesis: b b. '
+                                 'expected: 1. predicted: 0. '
+                                 'original prediction: 0.',
+                     global_step=0,
+                     epoch=0),
                 call.__bool__(),
-                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
-                     'expected: 0. predicted: 0.'),
-                call('nli-finetune', 'nli premise: a a a. hypothesis: b b. '
-                     'expected: 1. predicted: 0.')
-            ])
+                call(tag='nli-finetune',
+                     sample_text='nli premise: a a a. hypothesis: b b. '
+                                 'expected: 0. predicted: 0. '
+                                 'original prediction: 0.',
+                     global_step=0,
+                     epoch=0),
+                call(tag='nli-finetune',
+                     sample_text='nli premise: a a a. hypothesis: b b. '
+                                 'expected: 1. predicted: 0. '
+                                 'original prediction: 0.',
+                     global_step=0,
+                     epoch=0)
+                ])
 
     def __get_batch(self):
         return {

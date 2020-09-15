@@ -3,6 +3,7 @@ import torch
 
 from pytorch_lightning import LightningModule
 from pytorch_lightning.metrics import Accuracy
+from torch import Tensor
 from torch.optim import Adam
 from torch.utils.data.dataloader import DataLoader
 from transformers import (AutoConfig, AutoModelForSequenceClassification,
@@ -125,14 +126,16 @@ class NLIFinetuneModel(LightningModule):
 
         loss, logits = outputs[:2]
         predicted = torch.argmax(logits, dim=-1)
+        original = None
 
         if enable_label_remapping is True:
-            predicted = self._apply_label_remapping(predicted)
+            predicted, original = self._apply_label_remapping(predicted)
 
         accuracy = self.metric(predicted, batch['label'])
 
         if log is True:
-            self.__log_batch(inputs['input_ids'], inputs['labels'], predicted)
+            self.__log_batch(inputs['input_ids'], inputs['labels'], predicted,
+                             original)
 
         return loss, accuracy
 
@@ -153,8 +156,9 @@ class NLIFinetuneModel(LightningModule):
 
         return {**results_dict, 'log': results_dict}
 
-    def _apply_label_remapping(self, predicted: torch.Tensor):
+    def _apply_label_remapping(self, original_predictions: torch.Tensor):
         masks = []
+        predicted = original_predictions.clone()
 
         for original, target in self.label_mappings:
             masks.append((predicted == original, target))
@@ -162,7 +166,7 @@ class NLIFinetuneModel(LightningModule):
         for mask, target in masks:
             predicted.masked_fill_(mask, target)
 
-        return predicted
+        return predicted, original_predictions
 
     def train_dataloader(self) -> DataLoader:
         dataset = load_nli_dataset(self.hparams.data_dir,
@@ -206,20 +210,30 @@ class NLIFinetuneModel(LightningModule):
 
         self.train_key = f'{model_name}.{tokenizer_name}'
 
-    def __log_batch(self, input_ids, labels, predicted):
+    def __log_batch(self, input_ids: Tensor, labels: Tensor, predicted: Tensor,
+                    oringal_predictions: Tensor = None):
+
         if self.logger is not None and self.logger.experiment is not None \
-           and self.logger.experiment.add_text:
+           and self.logger.experiment.log_sample:
+
+            if oringal_predictions is None:
+                oringal_predictions = predicted
 
             for i, input_ids in enumerate(input_ids.tolist()):
 
                 decoded = self.tokenizer.decode(input_ids)
                 sentences = decoded.split(self.tokenizer.sep_token)
 
-                self.logger.experiment.add_text(
-                    'nli-finetune', f'nli premise: {sentences[0].strip()}. '
+                self.logger.experiment.log_sample(
+                    tag='nli-finetune',
+                    sample_text=f'nli premise: {sentences[0].strip()}. '
                     f'hypothesis: {sentences[1].strip()}. '
                     f'expected: {labels[i]}. '
-                    f'predicted: {predicted.tolist()[i]}.')
+                    f'predicted: {predicted[i]}. '
+                    f'original prediction: {oringal_predictions[i]}.',
+                    global_step=self.global_step,
+                    epoch=self.current_epoch
+                )
 
         else:
             logger.warn(

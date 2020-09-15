@@ -1,3 +1,4 @@
+from crosslangt.loggers import CrossLangLogger
 import os
 import re
 import torch
@@ -7,7 +8,6 @@ from typing import List, Tuple
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers.tensorboard import TensorBoardLogger
 from torch.utils.data.dataloader import DataLoader
 
 from crosslangt.lexical import SlicedEmbedding
@@ -28,7 +28,7 @@ def get_logger(experiment_name: str,
                logging_path: str,
                version: int = None):
 
-    return TensorBoardLogger(logging_path, experiment_name, version)
+    return CrossLangLogger(logging_path, experiment_name, version)
 
 
 def get_model_checkpoint_callback(experiment_path: str,
