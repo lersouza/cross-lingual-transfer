@@ -17,7 +17,7 @@ class ExtendedExperimentWriter(ExperimentWriter):
     def __init__(self, log_dir: str) -> None:
         super().__init__(log_dir)
 
-        self.samples_file = os.path.join(log_dir, self.SAMPLES_LOG_FILE)
+        self.samples_file_path = os.path.join(log_dir, self.SAMPLES_LOG_FILE)
         self.samples = []
 
     def log_sample(self,
@@ -39,7 +39,7 @@ class ExtendedExperimentWriter(ExperimentWriter):
         if self.samples:
             samples_fields = list(self.samples[0].keys())
 
-            with io.open(self.metrics_file_path, 'w', newline='') as f:
+            with io.open(self.samples_file_path, 'w', newline='') as f:
                 self.writer = csv.DictWriter(f, fieldnames=samples_fields)
                 self.writer.writeheader()
                 self.writer.writerows(self.samples)
