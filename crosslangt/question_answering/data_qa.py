@@ -18,7 +18,6 @@ from transformers.data.processors.utils import DataProcessor
 
 from crosslangt.dataset_utils import download
 
-
 logger = logging.getLogger('data_qa')
 
 
@@ -50,17 +49,23 @@ class SquadDataset(torch.utils.data.Dataset):
         feature = self.features[idx]
 
         item = {
-            'input_ids': feature.input_ids,
-            'attention_mask': feature.attention_mask,
-            'feature_id': feature.unique_id
+            'input_ids':
+            torch.tensor(feature.input_ids, dtype=torch.long),
+            'attention_mask':
+            torch.tensor(feature.attention_mask, dtype=torch.long),
+            'feature_id':
+            torch.tensor(feature.unique_id, dtype=torch.long)
         }
 
         if feature.start_position is not None:
-            item['start_positions'] = feature.start_position
-            item['end_positions'] = feature.end_position
+            item['start_positions'] = torch.tensor(feature.start_position,
+                                                   dtype=torch.long)
+            item['end_positions'] = torch.tensor(feature.end_position,
+                                                 dtype=torch.long)
 
         if feature.token_type_ids is not None:
-            item['token_type_ids'] = feature.token_type_ids
+            item['token_type_ids'] = torch.tensor(feature.token_type_ids,
+                                                  dtype=torch.long)
 
         return item
 

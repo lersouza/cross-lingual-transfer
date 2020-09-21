@@ -72,7 +72,7 @@ class QAFinetuneModel(pl.LightningModule):
     def _eval_step(self, batch, batch_idx):
         outputs = self(**batch)
 
-        feature_unique_ids = batch['feature_id']
+        feature_unique_ids = batch['feature_id'].detach().cpu().tolist()
         start_scores, end_scores = (outputs[1:3]
                                     if 'start_positions' in batch
                                     else outputs[:2])
