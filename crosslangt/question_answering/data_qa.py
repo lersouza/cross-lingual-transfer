@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 
 from dataclasses import dataclass
 import torch
+from torch.utils.data import DataLoader
 from crosslangt.dataset_utils import download
 
 from transformers import AutoTokenizer
@@ -109,6 +110,24 @@ class SquadDataModule(pl.LightningDataModule):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.tokenizer_name = tokenizer_name
         self.data_key = data_key
+
+    def train_dataloader(self, *args, **kwargs) -> DataLoader:
+        return DataLoader(self.train_dataset,
+                          batch_size=self.batch_size,
+                          num_workers=8,
+                          shuffle=True)
+
+    def val_dataloader(self, *args, **kwargs) -> DataLoader:
+        return DataLoader(self.eval_dataset,
+                          batch_size=self.batch_size,
+                          num_workers=8,
+                          shuffle=False)
+
+    def test_dataloader(self, *args, **kwargs) -> DataLoader:
+        return DataLoader(self.test_dataset,
+                          batch_size=self.batch_size,
+                          num_workers=8,
+                          shuffle=False)
 
     def prepare_data(self):
         train_location = download(self.data_config['train'], self.data_dir)
