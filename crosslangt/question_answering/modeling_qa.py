@@ -86,14 +86,14 @@ class QAFinetuneModel(pl.LightningModule):
             results.append(result)
 
         result = pl.EvalResult()
-        result.predictions = results
+        result.squad_results = results
 
         return result
 
     def _eval_epoch_end(self, validation_step_output_result, stage):
         # Flatten the results accumulated per batch
         all_results = [
-            r for b in validation_step_output_result.predictions for r in b
+            r for b in validation_step_output_result.squad_results for r in b
         ]
 
         output_prediction_file = os.path.join(
