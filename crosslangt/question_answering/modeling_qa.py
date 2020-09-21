@@ -1,4 +1,3 @@
-
 import os
 import pytorch_lightning as pl
 import torch
@@ -32,10 +31,8 @@ class QAFinetuneModel(pl.LightningModule):
         self.qa_model = AutoModelForQuestionAnswering.from_pretrained(
             pretrained_model)
 
-        setup_lexical_for_training(
-            self.hparams.train_lexical_strategy,
-            self.qa_model,
-            self.tokenizer)
+        setup_lexical_for_training(self.hparams.train_lexical_strategy,
+                                   self.qa_model, self.tokenizer)
 
     def forward(self, input_ids, attention_mask, token_type_ids,
                 start_positions, end_positions, **kwargs):
@@ -76,8 +73,7 @@ class QAFinetuneModel(pl.LightningModule):
         outputs = self(**batch)
 
         feature_unique_ids = batch['feature_id'].detach().cpu().tolist()
-        start_scores, end_scores = (outputs[1:3]
-                                    if 'start_positions' in batch
+        start_scores, end_scores = (outputs[1:3] if 'start_positions' in batch
                                     else outputs[:2])
 
         results = []
@@ -95,7 +91,10 @@ class QAFinetuneModel(pl.LightningModule):
         return result
 
     def _eval_epoch_end(self, validation_step_output_result, stage):
-        all_results = validation_step_output_result.predictions
+        # Flatten the results accumulated per batch
+        all_results = [
+            r for b in validation_step_output_result.predictions for r in b
+        ]
 
         output_prediction_file = os.path.join(
             self.hparams.output_dir,
@@ -106,9 +105,7 @@ class QAFinetuneModel(pl.LightningModule):
             f'nbest_predictions_epoch{self.current_epoch}-{stage}.json')
 
         examples, features = self.datamodule.retrieve_examples_and_features(
-            stage,
-            all_results
-        )
+            stage, all_results)
 
         predictions = compute_predictions_logits(
             examples,
@@ -133,6 +130,11 @@ class QAFinetuneModel(pl.LightningModule):
         validation_step_output_result.total = torch.tensor(results['total'])
 
         return validation_step_output_result
+
+    def setup(self, stage: str):
+        # We get a reference to the datamodule in use
+        # so we can calculate SQuAD metrics properly
+        self.datamodule = getattr(self.trainer, 'datamodule', None)
 
 
 if __name__ == "__main__":
