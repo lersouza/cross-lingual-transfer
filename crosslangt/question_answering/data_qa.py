@@ -186,7 +186,9 @@ class SquadDataModule(pl.LightningDataModule):
         file_name = self._gen_dataset_filename(config, split)
         file_path = os.path.join(self.data_dir, file_name)
 
-        torch.save((examples, features), file_path, HIGHEST_PROTOCOL)
+        torch.save((examples, features),
+                   file_path,
+                   pickle_protocol=HIGHEST_PROTOCOL)
 
     def _gen_dataset_filename(self, config: DataConfig, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
