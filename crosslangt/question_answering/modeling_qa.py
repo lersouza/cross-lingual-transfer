@@ -73,7 +73,9 @@ class QAFinetuneModel(pl.LightningModule):
         outputs = self(**batch)
 
         feature_unique_ids = batch['feature_id']
-        start_scores, end_scores = outputs[1:3]
+        start_scores, end_scores = (outputs[1:3]
+                                    if 'start_positions' in batch
+                                    else outputs[:2])
 
         results = []
 
@@ -94,11 +96,11 @@ class QAFinetuneModel(pl.LightningModule):
 
         output_prediction_file = os.path.join(
             self.hparams.output_dir,
-            f'predictions_epoch{self.current_epoch}.json')
+            f'predictions_epoch{self.current_epoch}-{stage}.json')
 
         output_nbest_file = os.path.join(
             self.hparams.output_dir,
-            f'nbest_predictions_epoch{self.current_epoch}.json')
+            f'nbest_predictions_epoch{self.current_epoch}-{stage}.json')
 
         examples, features = self.datamodule.retrieve_examples_and_features(
             stage,

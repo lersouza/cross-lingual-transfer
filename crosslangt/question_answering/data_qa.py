@@ -45,10 +45,12 @@ class SquadDataset(torch.utils.data.Dataset):
         item = {
             'input_ids': feature.input_ids,
             'attention_mask': feature.attention_mask,
-            'start_positions': feature.start_position,
-            'end_positions': feature.end_position,
             'feature_id': feature.unique_id
         }
+
+        if feature.start_position is not None:
+            item['start_positions'] = feature.start_position
+            item['end_positions'] = feature.end_position
 
         if feature.token_type_ids is not None:
             item['token_type_ids'] = feature.token_type_ids
@@ -58,24 +60,28 @@ class SquadDataModule(pl.LightningDataModule):
     DATASETS = {
         'squad_en':
         DataConfig(
-            'squad_en', 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+            'squad_en',
+            'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
             'train-v1.1.json',
             'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-            'dev-v1.1.json', SquadV1Processor()),
+            'dev-v1.1.json',
+            None, SquadV1Processor()),
         'faquad':
         DataConfig(
             'faquad',
             'https://raw.githubusercontent.com/liafacom/faquad/master'
             '/data/train.json',
             'https://raw.githubusercontent.com/liafacom/faquad/master/'
-            'data/dev.json', FaquadProcessor()),
+            'data/dev.json',
+            None, FaquadProcessor()),
         'squad_pt':
         DataConfig(
             'squad_pt',
             'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
             'master/train-v1.1-pt.json',
             'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-            'master/dev-v1.1-pt.json', SquadV1Processor()),
+            'master/dev-v1.1-pt.json',
+            None, SquadV1Processor()),
     }
 
     def __init__(self,
