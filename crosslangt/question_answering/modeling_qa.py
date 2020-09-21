@@ -125,11 +125,16 @@ class QAFinetuneModel(pl.LightningModule):
 
         results = squad_evaluate(examples, predictions)
 
-        validation_step_output_result.exact = torch.tensor(results['exact'])
-        validation_step_output_result.f1 = torch.tensor(results['f1'])
-        validation_step_output_result.total = torch.tensor(results['total'])
+        exact = torch.tensor(results['exact'])
+        f1 = torch.tensor(results['f1'])
+        total = torch.tensor(results['total'])
 
-        return validation_step_output_result
+        eval_result = pl.EvalResult(checkpoint_on=f1)
+        eval_result.log('f1_score', f1)
+        eval_result.log('exact', exact)
+        eval_result.log('total', total)
+
+        return eval_result
 
     def setup(self, stage: str):
         # We get a reference to the datamodule in use
