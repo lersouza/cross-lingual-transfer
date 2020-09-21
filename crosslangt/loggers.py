@@ -46,7 +46,9 @@ class ExtendedExperimentWriter(ExperimentWriter):
 
 
 class CrossLangLogger(CSVLogger):
-    def __init__(self, save_dir: str, name: Optional[str] = "default", version: Optional[Union[int, str]] = None) -> None:
+    def __init__(self, save_dir: str, name: Optional[str] = "default",
+                 version: Optional[Union[int, str]] = None) -> None:
+
         super().__init__(save_dir, name, version)
 
         self._experiment = ExtendedExperimentWriter(self.log_dir)
