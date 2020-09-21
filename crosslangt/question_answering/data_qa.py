@@ -1,19 +1,25 @@
-from multiprocessing import process
+import logging
 import os
-from pickle import HIGHEST_PROTOCOL
-from typing import List
+
 import pytorch_lightning as pl
+import torch
 
 from dataclasses import dataclass
-import torch
-from torch.utils.data import DataLoader
-from crosslangt.dataset_utils import download
+from multiprocessing import process
+from pickle import HIGHEST_PROTOCOL
+from typing import List
 
+from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from transformers.data.processors.utils import DataProcessor
 from transformers.data.processors.squad import (
     SquadExample, SquadFeatures, SquadProcessor, SquadResult, SquadV1Processor,
     squad_convert_examples_to_features)
+from transformers.data.processors.utils import DataProcessor
+
+from crosslangt.dataset_utils import download
+
+
+logger = logging.getLogger('data_qa')
 
 
 @dataclass
@@ -178,6 +184,11 @@ class SquadDataModule(pl.LightningDataModule):
         return examples, features
 
     def _process_dataset(self, file_location: str, split: str):
+        file_path = self._gen_dataset_filename(split)
+
+        if os.path.exists(file_path):
+            logger.info(f'File "{file_path}" already exists. Skipping."')
+            return
 
         processor = self.data_config['processor']
         examples = (processor.get_train_examples(self.data_dir) if split
@@ -193,9 +204,6 @@ class SquadDataModule(pl.LightningDataModule):
             return_dataset=False,
         )
 
-        file_name = self._gen_dataset_filename(split)
-        file_path = os.path.join(self.data_dir, file_name)
-
         torch.save((examples, features),
                    file_path,
                    pickle_protocol=HIGHEST_PROTOCOL)
@@ -203,5 +211,7 @@ class SquadDataModule(pl.LightningDataModule):
     def _gen_dataset_filename(self, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
 
-        return (f'{self.dataset_name}-{split}-{self.tokenizer_name}'
-                f'-{self.max_seq_length}{suffix}.ds')
+        file_name = (f'{self.dataset_name}-{split}-{self.tokenizer_name}'
+                     f'-{self.max_seq_length}{suffix}.ds')
+
+        return os.path.join(self.data_dir, file_name)
