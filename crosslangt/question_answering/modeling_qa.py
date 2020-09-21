@@ -124,15 +124,10 @@ class QAFinetuneModel(pl.LightningModule):
         )
 
         results = squad_evaluate(examples, predictions)
+        eval_result = pl.EvalResult()
 
-        exact = torch.tensor(results['exact'])
-        f1 = torch.tensor(results['f1'])
-        total = torch.tensor(results['total'])
-
-        eval_result = pl.EvalResult(checkpoint_on=f1)
-        eval_result.log('f1_score', f1)
-        eval_result.log('exact', exact)
-        eval_result.log('total', total)
+        for metric, value in results.items():
+            eval_result.log(metric, torch.tensor(value))
 
         return eval_result
 
