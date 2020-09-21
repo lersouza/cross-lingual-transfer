@@ -95,6 +95,7 @@ class SquadDataModule(pl.LightningDataModule):
 
         super().__init__()
 
+        self.dataset_name = dataset_name
         self.data_config = self.DATASETS[dataset_name]
         self.eval_split = eval_split
         self.test_split = test_split
@@ -159,7 +160,7 @@ class SquadDataModule(pl.LightningDataModule):
 
     def _process_dataset(self, file_location: str, split: str):
 
-        processor = self.data_config.processor
+        processor = self.data_config['processor']
         examples = (processor.get_train_examples(self.data_dir) if split
                     == 'train' else processor.get_dev_examples(self.data_dir))
 
@@ -183,5 +184,5 @@ class SquadDataModule(pl.LightningDataModule):
     def _gen_dataset_filename(self, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
 
-        return (f'{self.data_config.name}-{split}-{self.tokenizer_name}'
+        return (f'{self.dataset_name}-{split}-{self.tokenizer_name}'
                 f'-{self.max_seq_length}{suffix}.ds')
