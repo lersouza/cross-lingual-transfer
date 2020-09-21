@@ -33,7 +33,7 @@ class QAFinetuneModel(pl.LightningModule):
         setup_lexical_for_training(
             self.hparams.train_lexical_strategy,
             self.qa_model,
-            self.train_tokenizer)
+            self.tokenizer)
 
     def forward(self, input_ids, attention_mask, token_type_ids,
                 start_positions, end_positions, **kwargs):
