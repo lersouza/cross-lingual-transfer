@@ -1,8 +1,9 @@
-from crosslangt.lexical import setup_lexical_for_training
+
 import os
 import pytorch_lightning as pl
 import torch
 
+from crosslangt.lexical import setup_lexical_for_training
 from torch.optim import Adam
 
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering
@@ -15,6 +16,7 @@ class QAFinetuneModel(pl.LightningModule):
     def __init__(self,
                  pretrained_model: str,
                  train_lexical_strategy: str,
+                 learning_rate: float = 2e-5,
                  tokenizer_name: str = None,
                  max_answer_length: int = 30,
                  n_best_size: int = 20,
@@ -47,12 +49,13 @@ class QAFinetuneModel(pl.LightningModule):
         return outputs
 
     def configure_optimizers(self):
-        return Adam(self.parameters(), lr=2e-5)
+        return Adam(self.parameters(), lr=self.hparams.learning_rate)
 
     def training_step(self, batch, batch_idx):
-        loss, _ = self(**batch)
-        result = pl.TrainResult(minimize=loss)
+        outputs = self(**batch)
+        loss = outputs[0]
 
+        result = pl.TrainResult(minimize=loss)
         result.log('train_loss', loss)
 
         return result
@@ -130,3 +133,23 @@ class QAFinetuneModel(pl.LightningModule):
         validation_step_output_result.total = torch.tensor(results['total'])
 
         return validation_step_output_result
+
+
+if __name__ == "__main__":
+    from crosslangt.question_answering.data_qa import SquadDataModule
+    from pytorch_lightning import Trainer
+
+    os.makedirs('/tmp/data', exist_ok=True)
+
+    squad_en_default = SquadDataModule(dataset_name='squad_en',
+                                       tokenizer_name='bert-base-cased',
+                                       data_dir='/tmp/data',
+                                       batch_size=12,
+                                       max_seq_length=384,
+                                       max_query_length=64,
+                                       doc_stride=128)
+
+    model = QAFinetuneModel('bert-base-cased', 'none')
+    trainer = Trainer(fast_dev_run=True)
+
+    trainer.fit(model, squad_en_default)
