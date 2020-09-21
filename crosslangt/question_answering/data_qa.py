@@ -58,31 +58,31 @@ class SquadDataset(torch.utils.data.Dataset):
 
 class SquadDataModule(pl.LightningDataModule):
     DATASETS = {
-        'squad_en':
-        DataConfig(
-            'squad_en', 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+        'squad_en': {
+            'train': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
             'train-v1.1.json',
-            'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-            'dev-v1.1.json', None, SquadV1Processor()),
-        'faquad':
-        DataConfig(
-            'faquad',
-            'https://raw.githubusercontent.com/liafacom/faquad/master'
+            'eval': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+            'dev-v1.1.json',
+            'processor': SquadV1Processor()
+        },
+        'faquad': {
+            'train': 'https://raw.githubusercontent.com/liafacom/faquad/master'
             '/data/train.json',
-            'https://raw.githubusercontent.com/liafacom/faquad/master/'
-            'data/dev.json', None, FaquadProcessor()),
-        'squad_pt':
-        DataConfig(
-            'squad_pt',
-            'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
+            'eval': 'https://raw.githubusercontent.com/liafacom/faquad/master/'
+            'data/dev.json',
+            'processor': FaquadProcessor(),
+        },
+        'squad_pt': {
+            'train': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
             'master/train-v1.1-pt.json',
-            'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-            'master/dev-v1.1-pt.json', None, SquadV1Processor()),
+            'eval': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
+            'master/dev-v1.1-pt.json',
+            'processor': SquadV1Processor()
+        }
     }
 
     def __init__(self,
-                 train_dataset_name: str,
-                 eval_dataset_name: str,
+                 dataset_name: str,
                  tokenizer_name: str,
                  data_dir: str,
                  batch_size: int,
@@ -90,15 +90,14 @@ class SquadDataModule(pl.LightningDataModule):
                  max_query_length: int,
                  doc_stride: int,
                  data_key: str = None,
-                 test_dataset_name: str = None,
-                 use_eval_split_for_test: bool = False) -> None:
+                 eval_split: str = 'eval',
+                 test_split: str = 'eval') -> None:
 
         super().__init__()
 
-        self.train_config = self.DATASETS[train_dataset_name]
-        self.eval_config = self.DATASETS[eval_dataset_name]
-        self.test_config = self.DATASETS[test_dataset_name
-                                         or eval_dataset_name]
+        self.data_config = self.DATASETS[dataset_name]
+        self.eval_split = eval_split
+        self.test_split = test_split
 
         self.data_dir = data_dir
         self.batch_size = batch_size
@@ -110,45 +109,37 @@ class SquadDataModule(pl.LightningDataModule):
         self.tokenizer_name = tokenizer_name
         self.data_key = data_key
 
-        self.use_eval_split_for_test = use_eval_split_for_test
-
     def prepare_data(self):
-        train_location = download(self.train_config.train_url, self.data_dir)
-        eval_location = download(self.eval_config.eval_url, self.data_dir)
-        test_location = download(
-            self.test_config.test_url if self.use_eval_split_for_test is False
-            else self.test_config.eval_url, self.data_dir)
+        train_location = download(self.data_config['train'], self.data_dir)
+        eval_location = download(self.data_config[self.eval_split],
+                                 self.data_dir)
+        test_location = download(self.data_config[self.test_split],
+                                 self.data_dir)
 
-        self._process_dataset(self.train_config, train_location, 'train')
-        self._process_dataset(self.eval_config, eval_location, 'eval')
-
-        self._process_dataset(
-            self.test_config, test_location,
-            'test' if self.use_eval_split_for_test is False else 'eval')
+        self._process_dataset(train_location, 'train')
+        self._process_dataset(eval_location, self.eval_split)
+        self._process_dataset(test_location, self.test_split)
 
     def setup(self, stage):
         if stage == 'fit':
-            train_objects = torch.load(
-                self._gen_dataset_filename(self.train_config, 'train'))
+            train_objects = torch.load(self._gen_dataset_filename('train'))
             eval_objects = torch.load(
-                self._gen_dataset_filename(self.eval_config, 'eval'))
+                self._gen_dataset_filename(self.eval_split))
 
             self.train_dataset = SquadDataset(train_objects[0],
                                               train_objects[1])
             self.eval_dataset = SquadDataset(eval_objects[0], eval_objects[1])
         elif stage == 'test':
             test_objects = torch.load(
-                self._gen_dataset_filename(
-                    self.test_config, 'test'
-                    if self.use_eval_split_for_test is False else 'eval'))
+                self._gen_dataset_filename(self.test_split))
 
             self.test_dataset = SquadDataset(test_objects[0], test_objects[1])
 
     def retrieve_examples_and_features(self,
-                                       dataset_split: str = 'eval',
+                                       dataset: str = 'eval',
                                        results: List[SquadResult] = None):
         dataset = (self.test_dataset
-                   if dataset_split == 'test' else self.eval_dataset)
+                   if dataset == 'test' else self.eval_dataset)
 
         examples = dataset.examples
         features = dataset.features
@@ -166,10 +157,9 @@ class SquadDataModule(pl.LightningDataModule):
 
         return examples, features
 
-    def _process_dataset(self, config: DataConfig, file_location: str,
-                         split: str):
+    def _process_dataset(self, file_location: str, split: str):
 
-        processor = config.processor
+        processor = self.data_config.processor
         examples = (processor.get_train_examples(self.data_dir) if split
                     == 'train' else processor.get_dev_examples(self.data_dir))
 
@@ -179,19 +169,19 @@ class SquadDataModule(pl.LightningDataModule):
             self.max_seq_length,
             self.doc_stride,
             self.max_query_length,
-            True,
+            split == 'train',
             return_dataset=False,
         )
 
-        file_name = self._gen_dataset_filename(config, split)
+        file_name = self._gen_dataset_filename(split)
         file_path = os.path.join(self.data_dir, file_name)
 
         torch.save((examples, features),
                    file_path,
                    pickle_protocol=HIGHEST_PROTOCOL)
 
-    def _gen_dataset_filename(self, config: DataConfig, split: str):
+    def _gen_dataset_filename(self, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
 
-        return (f'{config.name}-{split}-{self.tokenizer_name}'
+        return (f'{self.data_config.name}-{split}-{self.tokenizer_name}'
                 f'-{self.max_seq_length}{suffix}.ds')
