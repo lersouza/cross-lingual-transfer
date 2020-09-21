@@ -62,6 +62,8 @@ class SquadDataset(torch.utils.data.Dataset):
         if feature.token_type_ids is not None:
             item['token_type_ids'] = feature.token_type_ids
 
+        return item
+
 
 class SquadDataModule(pl.LightningDataModule):
     DATASETS = {
