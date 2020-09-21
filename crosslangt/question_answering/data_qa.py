@@ -60,28 +60,24 @@ class SquadDataModule(pl.LightningDataModule):
     DATASETS = {
         'squad_en':
         DataConfig(
-            'squad_en',
-            'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+            'squad_en', 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
             'train-v1.1.json',
             'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-            'dev-v1.1.json',
-            None, SquadV1Processor()),
+            'dev-v1.1.json', None, SquadV1Processor()),
         'faquad':
         DataConfig(
             'faquad',
             'https://raw.githubusercontent.com/liafacom/faquad/master'
             '/data/train.json',
             'https://raw.githubusercontent.com/liafacom/faquad/master/'
-            'data/dev.json',
-            None, FaquadProcessor()),
+            'data/dev.json', None, FaquadProcessor()),
         'squad_pt':
         DataConfig(
             'squad_pt',
             'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
             'master/train-v1.1-pt.json',
             'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-            'master/dev-v1.1-pt.json',
-            None, SquadV1Processor()),
+            'master/dev-v1.1-pt.json', None, SquadV1Processor()),
     }
 
     def __init__(self,
@@ -119,7 +115,9 @@ class SquadDataModule(pl.LightningDataModule):
     def prepare_data(self):
         train_location = download(self.train_config.train_url, self.data_dir)
         eval_location = download(self.eval_config.eval_url, self.data_dir)
-        test_location = download(self.test_config.test_url, self.data_dir)
+        test_location = download(
+            self.test_config.test_url if self.use_eval_split_for_test is False
+            else self.test_config.eval_url, self.data_dir)
 
         self._process_dataset(self.train_config, train_location, 'train')
         self._process_dataset(self.eval_config, eval_location, 'eval')
