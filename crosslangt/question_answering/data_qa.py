@@ -217,8 +217,9 @@ class SquadDataModule(pl.LightningDataModule):
 
     def _gen_dataset_filename(self, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
+        tokenizer_name = self.tokenizer_name.replace('/', '-')
 
-        file_name = (f'{self.dataset_name}-{split}-{self.tokenizer_name}'
+        file_name = (f'{self.dataset_name}-{split}-{tokenizer_name}'
                      f'-{self.max_seq_length}{suffix}.ds')
 
         return os.path.join(self.data_dir, file_name)
