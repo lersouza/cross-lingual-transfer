@@ -40,6 +40,12 @@ class CMRC2018Processor(SquadProcessor):
     dev_file = "cmrc2018_dev.json"
 
 
+class DRCDProcessor(SquadProcessor):
+    train_file = "DRCD_training.json"
+    dev_file = "DRCD_dev.json"
+    test_file = "DRCD_test.json"
+
+
 class SquadDataset(torch.utils.data.Dataset):
     def __init__(self, examples: List[SquadExample],
                  features: List[SquadFeatures]) -> None:
@@ -104,6 +110,15 @@ class SquadDataModule(pl.LightningDataModule):
             'eval': 'https://github.com/ymcui/cmrc2018/blob/master/'
                     'squad-style-data/cmrc2018_dev.json',
             'processor': CMRC2018Processor()
+        },
+        'drcd': {
+            'train': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
+                     'DRCD/master/DRCD_training.json',
+            'eval': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
+                    'DRCD/master/DRCD_dev.json',
+            'test': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
+                    'DRCD/master/DRCD_test.json',
+            'processor': DRCDProcessor()
         }
     }
 
@@ -210,8 +225,15 @@ class SquadDataModule(pl.LightningDataModule):
             return
 
         processor = self.data_config['processor']
-        examples = (processor.get_train_examples(self.data_dir) if split
-                    == 'train' else processor.get_dev_examples(self.data_dir))
+        examples = None
+
+        if split == 'test' and 'test' in self.data_config:
+            examples = processor.get_dev_examples(self.data_dir,
+                                                  processor.test_file)
+        else:
+            examples = (processor.get_train_examples(self.data_dir)
+                        if split == 'train' else processor.get_dev_examples(
+                            self.data_dir))
 
         features = squad_convert_examples_to_features(
             examples,
