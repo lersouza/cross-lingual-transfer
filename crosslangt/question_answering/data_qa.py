@@ -35,6 +35,11 @@ class FaquadProcessor(SquadProcessor):
     dev_file = "dev.json"
 
 
+class CMRC2018Processor(SquadProcessor):
+    train_file = "cmrc2018_train.json"
+    dev_file = "cmrc2018_dev.json"
+
+
 class SquadDataset(torch.utils.data.Dataset):
     def __init__(self, examples: List[SquadExample],
                  features: List[SquadFeatures]) -> None:
@@ -92,6 +97,13 @@ class SquadDataModule(pl.LightningDataModule):
             'eval': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
             'master/dev-v1.1-pt.json',
             'processor': SquadV1Processor()
+        },
+        'cmrc2018': {
+            'train': 'https://github.com/ymcui/cmrc2018/blob/master/'
+                     'squad-style-data/cmrc2018_train.json',
+            'eval': 'https://github.com/ymcui/cmrc2018/blob/master/'
+                    'squad-style-data/cmrc2018_dev.json',
+            'processor': CMRC2018Processor()
         }
     }
 
