@@ -132,7 +132,8 @@ class SquadDataModule(pl.LightningDataModule):
                  doc_stride: int,
                  data_key: str = None,
                  eval_split: str = 'eval',
-                 test_split: str = 'eval') -> None:
+                 test_split: str = 'eval',
+                 preprocess_threads: int = 1) -> None:
 
         super().__init__()
 
@@ -146,6 +147,8 @@ class SquadDataModule(pl.LightningDataModule):
         self.max_seq_length = max_seq_length
         self.max_query_length = max_query_length
         self.doc_stride = doc_stride
+
+        self.preprocess_threads = preprocess_threads
 
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.tokenizer_name = tokenizer_name
@@ -243,6 +246,7 @@ class SquadDataModule(pl.LightningDataModule):
             self.max_query_length,
             split == 'train',
             return_dataset=False,
+            threads=self.preprocess_threads
         )
 
         torch.save((examples, features),
