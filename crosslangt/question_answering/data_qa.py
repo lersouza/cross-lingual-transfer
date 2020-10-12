@@ -126,7 +126,7 @@ KNWON_QA_DATASETS = {
         'eval': 'https://raw.githubusercontent.com/lersouza/'
                  'cross-lingual-transfer/master/datasets/SberQuAD/'
                  'dev-v1.1.json',
-        'processor': SquadProcessor(),
+        'processor': SquadV1Processor(),
     }
 }
 
