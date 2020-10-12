@@ -120,10 +120,12 @@ KNWON_QA_DATASETS = {
         'processor': DRCDProcessor()
     },
     'sberquad': {
-        'train': 'https://raw.githubusercontent.com/lersouza/crosslangt/master'
-                 '/datasets/SberQuAD/train-v1.1.json',
-        'eval': 'https://raw.githubusercontent.com/lersouza/crosslangt/master'
-                 '/datasets/SberQuAD/dev-v1.1.json',
+        'train': 'https://raw.githubusercontent.com/lersouza/'
+                 'cross-lingual-transfer/master/datasets/SberQuAD/'
+                 'train-v1.1.json',
+        'eval': 'https://raw.githubusercontent.com/lersouza/'
+                 'cross-lingual-transfer/master/datasets/SberQuAD/'
+                 'dev-v1.1.json',
         'processor': SquadProcessor(),
     }
 }
