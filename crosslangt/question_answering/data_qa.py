@@ -132,7 +132,7 @@ KNWON_QA_DATASETS = {
 class SquadDataModule(pl.LightningDataModule):
 
     def __init__(self,
-                 dataset_name_or_config: Union[str, Dict[str, Dict]],
+                 dataset_name: str,
                  tokenizer_name: str,
                  data_dir: str,
                  batch_size: int,
@@ -142,16 +142,14 @@ class SquadDataModule(pl.LightningDataModule):
                  data_key: str = None,
                  eval_split: str = 'eval',
                  test_split: str = 'eval',
-                 preprocess_threads: int = 1) -> None:
+                 preprocess_threads: int = 1,
+                 dataset_custom_config: Dict[str, Dict] = None) -> None:
 
         super().__init__()
 
-        if type(dataset_name_or_config) is str:
-            self.dataset_name = dataset_name_or_config
-            self.data_config = KNWON_QA_DATASETS[dataset_name_or_config]
-        else:
-            self.dataset_name = 'custom'
-            self.data_config = dataset_name_or_config
+        self.dataset_name = dataset_name
+        self.data_config = (dataset_custom_config or
+                            KNWON_QA_DATASETS[dataset_name])
 
         self.eval_split = eval_split
         self.test_split = test_split
