@@ -7,7 +7,7 @@ import torch
 from dataclasses import dataclass
 from multiprocessing import process
 from pickle import HIGHEST_PROTOCOL
-from typing import List
+from typing import Dict, List, Union
 
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
@@ -81,49 +81,58 @@ class SquadDataset(torch.utils.data.Dataset):
         return item
 
 
-class SquadDataModule(pl.LightningDataModule):
-    DATASETS = {
-        'squad_en': {
-            'train': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-            'train-v1.1.json',
-            'eval': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-            'dev-v1.1.json',
-            'processor': SquadV1Processor()
-        },
-        'faquad': {
-            'train': 'https://raw.githubusercontent.com/liafacom/faquad/master'
-            '/data/train.json',
-            'eval': 'https://raw.githubusercontent.com/liafacom/faquad/master/'
-            'data/dev.json',
-            'processor': FaquadProcessor(),
-        },
-        'squad_pt': {
-            'train': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-            'master/train-v1.1-pt.json',
-            'eval': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-            'master/dev-v1.1-pt.json',
-            'processor': SquadV1Processor()
-        },
-        'cmrc2018': {
-            'train': 'https://github.com/ymcui/cmrc2018/blob/master/'
-                     'squad-style-data/cmrc2018_train.json',
-            'eval': 'https://github.com/ymcui/cmrc2018/blob/master/'
-                    'squad-style-data/cmrc2018_dev.json',
-            'processor': CMRC2018Processor()
-        },
-        'drcd': {
-            'train': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
-                     'DRCD/master/DRCD_training.json',
-            'eval': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
-                    'DRCD/master/DRCD_dev.json',
-            'test': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
-                    'DRCD/master/DRCD_test.json',
-            'processor': DRCDProcessor()
-        }
+KNWON_QA_DATASETS = {
+    'squad_en': {
+        'train': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+        'train-v1.1.json',
+        'eval': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
+        'dev-v1.1.json',
+        'processor': SquadV1Processor()
+    },
+    'faquad': {
+        'train': 'https://raw.githubusercontent.com/liafacom/faquad/master'
+        '/data/train.json',
+        'eval': 'https://raw.githubusercontent.com/liafacom/faquad/master/'
+        'data/dev.json',
+        'processor': FaquadProcessor(),
+    },
+    'squad_pt': {
+        'train': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
+        'master/train-v1.1-pt.json',
+        'eval': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
+        'master/dev-v1.1-pt.json',
+        'processor': SquadV1Processor()
+    },
+    'cmrc2018': {
+        'train': 'https://github.com/ymcui/cmrc2018/blob/master/'
+        'squad-style-data/cmrc2018_train.json',
+        'eval': 'https://github.com/ymcui/cmrc2018/blob/master/'
+        'squad-style-data/cmrc2018_dev.json',
+        'processor': CMRC2018Processor()
+    },
+    'drcd': {
+        'train': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
+        'DRCD/master/DRCD_training.json',
+        'eval': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
+        'DRCD/master/DRCD_dev.json',
+        'test': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
+        'DRCD/master/DRCD_test.json',
+        'processor': DRCDProcessor()
+    },
+    'sberquad': {
+        'train': 'https://raw.githubusercontent.com/lersouza/crosslangt/master'
+                 '/datasets/SberQuAD/train-v1.1.json',
+        'eval': 'https://raw.githubusercontent.com/lersouza/crosslangt/master'
+                 '/datasets/SberQuAD/dev-v1.1.json',
+        'processor': SquadProcessor(),
     }
+}
+
+
+class SquadDataModule(pl.LightningDataModule):
 
     def __init__(self,
-                 dataset_name: str,
+                 dataset_name_or_config: Union[str, Dict[str, Dict]],
                  tokenizer_name: str,
                  data_dir: str,
                  batch_size: int,
@@ -137,8 +146,13 @@ class SquadDataModule(pl.LightningDataModule):
 
         super().__init__()
 
-        self.dataset_name = dataset_name
-        self.data_config = self.DATASETS[dataset_name]
+        if type(dataset_name_or_config) is str:
+            self.dataset_name = dataset_name_or_config
+            self.data_config = KNWON_QA_DATASETS[dataset_name_or_config]
+        else:
+            self.dataset_name = 'custom'
+            self.data_config = dataset_name_or_config
+
         self.eval_split = eval_split
         self.test_split = test_split
 
