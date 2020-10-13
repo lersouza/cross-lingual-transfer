@@ -1,138 +1,96 @@
 import logging
 import os
+from sys import path
 
 import pytorch_lightning as pl
 import torch
 
 from dataclasses import dataclass
-from multiprocessing import process
 from pickle import HIGHEST_PROTOCOL
-from typing import Dict, List, Union
+from typing import Dict, List, Optional
+from tqdm import tqdm
 
 from torch.utils.data import DataLoader
+from torch.utils.data.dataset import Dataset
 from transformers import AutoTokenizer
-from transformers.data.processors.squad import (
-    SquadExample, SquadFeatures, SquadProcessor, SquadResult, SquadV1Processor,
-    squad_convert_examples_to_features)
-from transformers.data.processors.utils import DataProcessor
 
-from crosslangt.dataset_utils import download
+from deeppavlov.dataset_readers.squad_dataset_reader import SquadDatasetReader
+from deeppavlov.dataset_iterators.squad_iterator import SquadIterator
+from deeppavlov.models.preprocessors.squad_preprocessor import (
+    SquadBertAnsPostprocessor, SquadBertMappingPreprocessor,
+    SquadBertAnsPreprocessor)
+from transformers.data.processors.squad import SquadResult
 
 logger = logging.getLogger('data_qa')
 
 
 @dataclass
-class DataConfig:
-    name: str
-    train_url: str
-    eval_url: str
-    test_url: str
-    processor: DataProcessor
-
-
-class FaquadProcessor(SquadProcessor):
-    train_file = "train.json"
-    dev_file = "dev.json"
-
-
-class CMRC2018Processor(SquadProcessor):
-    train_file = "cmrc2018_train.json"
-    dev_file = "cmrc2018_dev.json"
-
-
-class DRCDProcessor(SquadProcessor):
-    train_file = "DRCD_training.json"
-    dev_file = "DRCD_dev.json"
-    test_file = "DRCD_test.json"
-
-
-class SquadDataset(torch.utils.data.Dataset):
-    def __init__(self, examples: List[SquadExample],
-                 features: List[SquadFeatures]) -> None:
-
-        self.examples = examples
-        self.features = features
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        feature = self.features[idx]
-
-        item = {
-            'input_ids':
-            torch.tensor(feature.input_ids, dtype=torch.long),
-            'attention_mask':
-            torch.tensor(feature.attention_mask, dtype=torch.long),
-            'feature_id':
-            torch.tensor(feature.unique_id, dtype=torch.long)
-        }
-
-        if feature.start_position is not None:
-            item['start_positions'] = torch.tensor(feature.start_position,
-                                                   dtype=torch.long)
-            item['end_positions'] = torch.tensor(feature.end_position,
-                                                 dtype=torch.long)
-
-        if feature.token_type_ids is not None:
-            item['token_type_ids'] = torch.tensor(feature.token_type_ids,
-                                                  dtype=torch.long)
-
-        return item
+class SquadInputFeatures:
+    original_index: int
+    tokens: List[str]
+    input_ids: List[int]
+    input_mask: List[int]
+    input_type_ids: Optional[List[int]]
 
 
 KNWON_QA_DATASETS = {
     'squad_en': {
-        'train': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-        'train-v1.1.json',
-        'eval': 'https://rajpurkar.github.io/SQuAD-explorer/dataset/'
-        'dev-v1.1.json',
-        'processor': SquadV1Processor()
+        'url': None,
+        'original_dataset_name': 'SQuAD'
     },
     'faquad': {
-        'train': 'https://raw.githubusercontent.com/liafacom/faquad/master'
-        '/data/train.json',
-        'eval': 'https://raw.githubusercontent.com/liafacom/faquad/master/'
-        'data/dev.json',
-        'processor': FaquadProcessor(),
-    },
-    'squad_pt': {
-        'train': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-        'master/train-v1.1-pt.json',
-        'eval': 'https://raw.githubusercontent.com/nunorc/squad-v1.1-pt/'
-        'master/dev-v1.1-pt.json',
-        'processor': SquadV1Processor()
-    },
-    'cmrc2018': {
-        'train': 'https://github.com/ymcui/cmrc2018/blob/master/'
-        'squad-style-data/cmrc2018_train.json',
-        'eval': 'https://github.com/ymcui/cmrc2018/blob/master/'
-        'squad-style-data/cmrc2018_dev.json',
-        'processor': CMRC2018Processor()
+        'url': 'https://raw.githubusercontent.com/lersouza/'
+        'cross-lingual-transfer/master/datasets/faquad.tar.gz',
+        'original_dataset_name': 'FaQuAD'
     },
     'drcd': {
-        'train': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
-        'DRCD/master/DRCD_training.json',
-        'eval': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
-        'DRCD/master/DRCD_dev.json',
-        'test': 'https://raw.githubusercontent.com/DRCKnowledgeTeam/'
-        'DRCD/master/DRCD_test.json',
-        'processor': DRCDProcessor()
+        'url': 'http://files.deeppavlov.ai/datasets/DRCD.tar.gz',
+        'original_dataset_name': 'DRCD'
     },
-    'sberquad': {
-        'train': 'https://raw.githubusercontent.com/lersouza/'
-                 'cross-lingual-transfer/master/datasets/SberQuAD/'
-                 'train-v1.1.json',
-        'eval': 'https://raw.githubusercontent.com/lersouza/'
-                 'cross-lingual-transfer/master/datasets/SberQuAD/'
-                 'dev-v1.1.json',
-        'processor': SquadV1Processor(),
+    'sbersquad': {
+        'url':
+        'http://files.deeppavlov.ai/datasets/sber_squad_clean-v1.1.tar.gz',
+        'original_dataset_name': 'SberSQuADClean',
     }
 }
 
 
-class SquadDataModule(pl.LightningDataModule):
+class SquadDataset(Dataset):
+    def __init__(self, input_features, contexts_raw, answers, answers_start,
+                 answers_end, tok2char, char2tok):
 
+        self.input_features = input_features
+        self.contexts_raw = contexts_raw
+        self.answers = answers
+        self.answers_start = answers_start
+        self.answers_end = answers_end
+        self.tok2char = tok2char
+        self.char2tok = char2tok
+
+    def __len__(self) -> int:
+        return len(self.input_features)
+
+    def __getitem__(self, index: int):
+        features = self.input_features[index]
+        ans_start = self.answers_start[index]
+        ans_end = self.answers_end[index]
+
+        example = {
+            'index': torch.tensor(features.original_index).long(),
+            'input_ids': torch.tensor(features.input_ids).long(),
+            'attention_mask': torch.tensor(features.input_mask).long(),
+            'start_positions': torch.tensor(ans_start[0]).long(),
+            'end_positions': torch.tensor(ans_end[0]).long()
+        }
+
+        if features.input_type_ids is not None:
+            example['token_type_ids'] = torch.tensor(
+                features.input_type_ids).long()
+
+        return example
+
+
+class SquadDataModule(pl.LightningDataModule):
     def __init__(self,
                  dataset_name: str,
                  tokenizer_name: str,
@@ -140,32 +98,36 @@ class SquadDataModule(pl.LightningDataModule):
                  batch_size: int,
                  max_seq_length: int,
                  max_query_length: int,
-                 doc_stride: int,
                  data_key: str = None,
                  eval_split: str = 'eval',
                  test_split: str = 'eval',
                  preprocess_threads: int = 1,
-                 dataset_custom_config: Dict[str, Dict] = None) -> None:
+                 dataset_custom_config: Dict[str, Dict] = None,
+                 do_lower_case: bool = False) -> None:
 
         super().__init__()
 
         self.dataset_name = dataset_name
-        self.data_config = (dataset_custom_config or
-                            KNWON_QA_DATASETS[dataset_name])
+        self.data_config = (dataset_custom_config
+                            or KNWON_QA_DATASETS[dataset_name])
 
-        self.eval_split = eval_split
-        self.test_split = test_split
+        # Using DeepPavlov split names instead of eval
+        self.train_split = 'train'
+        self.eval_split = 'valid' if eval_split == 'eval' else eval_split
+        self.test_split = 'valid' if test_split == 'eval' else test_split
 
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.max_seq_length = max_seq_length
         self.max_query_length = max_query_length
-        self.doc_stride = doc_stride
 
         self.preprocess_threads = preprocess_threads
 
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_name, do_lower_case=do_lower_case)
+
         self.tokenizer_name = tokenizer_name
+        self.do_lower_case = do_lower_case
         self.data_key = data_key
 
     def train_dataloader(self, *args, **kwargs) -> DataLoader:
@@ -187,85 +149,98 @@ class SquadDataModule(pl.LightningDataModule):
                           shuffle=False)
 
     def prepare_data(self):
-        train_location = download(self.data_config['train'], self.data_dir)
-        eval_location = download(self.data_config[self.eval_split],
-                                 self.data_dir)
-        test_location = download(self.data_config[self.test_split],
-                                 self.data_dir)
+        dataset_reader = SquadDatasetReader()
+        dataset = dataset_reader.read(
+            os.path.join(self.data_dir, self.dataset_name),
+            self.data_config['original_dataset_name'],
+            url=self.data_config['url'])
 
-        self._process_dataset(train_location, 'train')
-        self._process_dataset(eval_location, self.eval_split)
-        self._process_dataset(test_location, self.test_split)
+        iterator = SquadIterator(dataset)
+        bert_mappings = SquadBertMappingPreprocessor(
+            do_lower_case=self.do_lower_case)
+        ans_preprocessor = SquadBertAnsPreprocessor(
+            do_lower_case=self.do_lower_case)
+
+        for split in [self.train_split, self.eval_split, self.test_split]:
+            instances = iterator.get_instances(split)
+
+            contexts_raw = []
+            answers_raw = []
+            answers_raw_start = []
+            input_features = []
+
+            for i, (context,
+                    question) in tqdm(enumerate(instances[0]),
+                                      total=len(instances[0]),
+                                      desc=f'tokenizing {split} instances'):
+
+                tokenized = self.tokenizer(question,
+                                           context,
+                                           truncation=True,
+                                           max_length=self.max_seq_length)
+                tokens = self.tokenizer.convert_ids_to_tokens(
+                    tokenized['input_ids'])
+
+                tokenized = self.tokenizer.pad(tokenized,
+                                               padding='max_length',
+                                               max_length=self.max_seq_length)
+                in_features = SquadInputFeatures(
+                    i, tokens,
+                    tokenized['input_ids'], tokenized['attention_mask'],
+                    tokenized.get('token_type_ids'))
+
+                contexts_raw.append(context)
+                input_features.append(in_features)
+
+                answers_raw.append(instances[1][i][0])
+                answers_raw_start.append(instances[1][i][1])
+
+            subtok2chars, char2subtoks = bert_mappings(contexts_raw,
+                                                       input_features)
+            ans, ans_start, ans_end = ans_preprocessor(answers_raw,
+                                                       answers_raw_start,
+                                                       char2subtoks)
+
+            torch.save(
+                {
+                    'input_features': input_features,
+                    'contexts_raw': contexts_raw,
+                    'answers': ans,
+                    'answers_start': ans_start,
+                    'answers_end': ans_end,
+                    'tok2char': subtok2chars,
+                    'char2tok': char2subtoks
+                },
+                self._gen_dataset_filename(split),
+                pickle_protocol=HIGHEST_PROTOCOL)
 
     def setup(self, stage):
         if stage == 'fit':
-            train_objects = torch.load(self._gen_dataset_filename('train'))
+            train_objects = torch.load(
+                self._gen_dataset_filename(self.train_split))
             eval_objects = torch.load(
                 self._gen_dataset_filename(self.eval_split))
 
-            self.train_dataset = SquadDataset(train_objects[0],
-                                              train_objects[1])
-            self.eval_dataset = SquadDataset(eval_objects[0], eval_objects[1])
+            self.train_dataset = SquadDataset(**train_objects)
+            self.eval_dataset = SquadDataset(**eval_objects)
         elif stage == 'test':
             test_objects = torch.load(
                 self._gen_dataset_filename(self.test_split))
 
-            self.test_dataset = SquadDataset(test_objects[0], test_objects[1])
+            self.test_dataset = SquadDataset(**test_objects)
 
-    def retrieve_examples_and_features(self,
-                                       dataset: str = 'eval',
-                                       results: List[SquadResult] = None):
-        dataset = (self.test_dataset
-                   if dataset == 'test' else self.eval_dataset)
+    def post_process_data(self,
+                          predicted_starts,
+                          predicted_ends,
+                          phase='eval'):
+        post_processor = SquadBertAnsPostprocessor()
+        dataset = self.eval_dataset if phase == 'eval' else self.test_dataset
 
-        examples = dataset.examples
-        features = dataset.features
+        ans_predicted, ans_start_predicted, ans_end_predicted = post_processor(
+            predicted_starts, predicted_ends, dataset.contexts_raw,
+            dataset.input_features, dataset.tok2char)
 
-        if results is not None and len(results) != len(features):
-            eval_features_index = {f.unique_id: f for f in features}
-
-            # Working with a subset of the data (probably Fast Dev Run Mode)
-            examples = [
-                examples[eval_features_index[i.unique_id].example_index]
-                for i in results
-            ]
-
-            features = [eval_features_index[i.unique_id] for i in results]
-
-        return examples, features
-
-    def _process_dataset(self, file_location: str, split: str):
-        file_path = self._gen_dataset_filename(split)
-
-        if os.path.exists(file_path):
-            logger.info(f'File "{file_path}" already exists. Skipping."')
-            return
-
-        processor = self.data_config['processor']
-        examples = None
-
-        if split == 'test' and 'test' in self.data_config:
-            examples = processor.get_dev_examples(self.data_dir,
-                                                  processor.test_file)
-        else:
-            examples = (processor.get_train_examples(self.data_dir)
-                        if split == 'train' else processor.get_dev_examples(
-                            self.data_dir))
-
-        features = squad_convert_examples_to_features(
-            examples,
-            self.tokenizer,
-            self.max_seq_length,
-            self.doc_stride,
-            self.max_query_length,
-            split == 'train',
-            return_dataset=False,
-            threads=self.preprocess_threads
-        )
-
-        torch.save((examples, features),
-                   file_path,
-                   pickle_protocol=HIGHEST_PROTOCOL)
+        return dataset.answers, ans_predicted
 
     def _gen_dataset_filename(self, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
@@ -275,3 +250,8 @@ class SquadDataModule(pl.LightningDataModule):
                      f'-{self.max_seq_length}{suffix}.ds')
 
         return os.path.join(self.data_dir, file_name)
+
+
+if __name__ == '__main__':
+    SquadDataModule('sbersquad', 'DeepPavlov/rubert-base-cased', '/tmp', 32,
+                    384, 0).prepare_data()

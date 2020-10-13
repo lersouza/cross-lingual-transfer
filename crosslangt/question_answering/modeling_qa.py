@@ -1,14 +1,15 @@
 import os
 import pytorch_lightning as pl
 import torch
+from transformers.modeling_bert import BertForQuestionAnswering
 
 from crosslangt.lexical import setup_lexical_for_training
 from torch.optim import Adam
 
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering
-from transformers.data.metrics.squad_metrics import (
-    compute_predictions_logits, squad_evaluate)
 from transformers.data.processors.squad import SquadResult
+
+from deeppavlov.metrics.squad_metrics import squad_v1_f1, squad_v1_exact_match
 
 
 class QAFinetuneModel(pl.LightningModule):
@@ -72,62 +73,42 @@ class QAFinetuneModel(pl.LightningModule):
     def _eval_step(self, batch, batch_idx):
         outputs = self(**batch)
 
-        feature_unique_ids = batch['feature_id'].detach().cpu().tolist()
         start_scores, end_scores = (outputs[1:3] if 'start_positions' in batch
                                     else outputs[:2])
 
-        results = []
+        predicted_starts = []
+        predicted_ends = []
 
-        for i, unique_id in enumerate(feature_unique_ids):
-            result = SquadResult(unique_id,
-                                 start_scores[i].detach().cpu().tolist(),
-                                 end_scores[i].detach().cpu().tolist())
-
-            results.append(result)
+        for i in range(start_scores.shape[0]):
+            predicted_starts.append(start_scores[i].detach().cpu().tolist()),
+            predicted_ends.append(end_scores[i].detach().cpu().tolist())
 
         result = pl.EvalResult()
-        result.squad_results = results
+        result.predicted_starts = predicted_starts
+        result.predicted_ends = predicted_ends
 
         return result
 
     def _eval_epoch_end(self, validation_step_output_result, stage):
         # Flatten the results accumulated per batch
-        all_results = [
-            r for b in validation_step_output_result.squad_results for r in b
+        predicted_starts = [
+            r for b in validation_step_output_result.predicted_starts
+            for r in b
+        ]
+        predicted_ends = [
+            r for b in validation_step_output_result.predicted_ends for r in b
         ]
 
-        output_prediction_file = os.path.join(
-            self.hparams.output_dir,
-            f'predictions_epoch{self.current_epoch}-{stage}.json')
+        answers, predicted = self.datamodule.post_process_data(
+            predicted_starts, predicted_ends)
 
-        output_nbest_file = os.path.join(
-            self.hparams.output_dir,
-            f'nbest_predictions_epoch{self.current_epoch}-{stage}.json')
+        f1_score = squad_v1_f1(answers, predicted)
+        em_score = squad_v1_exact_match(answers, predicted)
 
-        examples, features = self.datamodule.retrieve_examples_and_features(
-            stage, all_results)
-
-        predictions = compute_predictions_logits(
-            examples,
-            features,
-            all_results,
-            self.hparams.n_best_size,
-            self.hparams.max_answer_length,
-            False,
-            output_prediction_file,
-            output_nbest_file,
-            None,
-            False,
-            False,
-            0.0,
-            self.tokenizer,
-        )
-
-        results = squad_evaluate(examples, predictions)
         eval_result = pl.EvalResult()
 
-        for metric, value in results.items():
-            eval_result.log(metric, torch.tensor(value))
+        eval_result.log('f1', torch.tensor(f1_score))
+        eval_result.log('em', torch.tensor(em_score))
 
         return eval_result
 
@@ -135,23 +116,3 @@ class QAFinetuneModel(pl.LightningModule):
         # We get a reference to the datamodule in use
         # so we can calculate SQuAD metrics properly
         self.datamodule = getattr(self.trainer, 'datamodule', None)
-
-
-if __name__ == "__main__":
-    from crosslangt.question_answering.data_qa import SquadDataModule
-    from pytorch_lightning import Trainer
-
-    os.makedirs('/tmp/data', exist_ok=True)
-
-    squad_en_default = SquadDataModule(dataset_name='squad_en',
-                                       tokenizer_name='bert-base-cased',
-                                       data_dir='/tmp/data',
-                                       batch_size=12,
-                                       max_seq_length=384,
-                                       max_query_length=64,
-                                       doc_stride=128)
-
-    model = QAFinetuneModel('bert-base-cased', 'none')
-    trainer = Trainer(fast_dev_run=True)
-
-    trainer.fit(model, squad_en_default)
