@@ -162,7 +162,7 @@ class SquadDataModule(pl.LightningDataModule):
             target_dataset_file = self._gen_dataset_filename(split)
 
             if os.path.exists(target_dataset_file):
-                logger.info(f'Dataset file '{target_dataset_file}'
+                logger.info(f'Dataset file {target_dataset_file}'
                             'already exists. Skipping.')
                 continue
 
