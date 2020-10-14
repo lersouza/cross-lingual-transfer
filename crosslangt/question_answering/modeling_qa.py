@@ -88,8 +88,8 @@ class QAFinetuneModel(pl.LightningModule):
 
         result = pl.EvalResult()
 
-        result.predicted_starts = pred_starts
-        result.predicted_ends = pred_ends
+        result.predicted_starts = pred_starts.detach().cpu().tolist()
+        result.predicted_ends = pred_ends.detach().cpu().tolist()
 
         return result
 
