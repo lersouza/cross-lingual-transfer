@@ -162,6 +162,13 @@ class SquadDataModule(pl.LightningDataModule):
             do_lower_case=self.do_lower_case)
 
         for split in [self.train_split, self.eval_split, self.test_split]:
+            target_dataset_file = self._gen_dataset_filename(split)
+
+            if os.path.exists(target_dataset_file):
+                logger.info(f'Dataset file '{target_dataset_file}'
+                            'already exists. Skipping.')
+                continue
+
             instances = iterator.get_instances(split)
 
             contexts_raw = []
