@@ -76,16 +76,20 @@ class QAFinetuneModel(pl.LightningModule):
         start_scores, end_scores = (outputs[1:3] if 'start_positions' in batch
                                     else outputs[:2])
 
-        predicted_starts = []
-        predicted_ends = []
+        max_context_length = torch.sum(batch['token_type_ids'], dim=-1)
 
-        for i in range(start_scores.shape[0]):
-            predicted_starts.append(start_scores[i].detach().cpu().tolist()),
-            predicted_ends.append(end_scores[i].detach().cpu().tolist())
+        pred_starts = torch.argmax(start_scores, dim=-1)
+        pred_ends = torch.argmax(end_scores, dim=-1)
+
+        zero = torch.tensor(0).long()
+
+        pred_starts.masked_fill_(pred_starts > max_context_length, zero)
+        pred_ends.masked_fill_(pred_ends > max_context_length, zero)
 
         result = pl.EvalResult()
-        result.predicted_starts = predicted_starts
-        result.predicted_ends = predicted_ends
+
+        result.predicted_starts = pred_starts
+        result.predicted_ends = pred_ends
 
         return result
 

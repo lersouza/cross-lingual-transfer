@@ -79,13 +79,10 @@ class SquadDataset(Dataset):
             'index': torch.tensor(features.original_index).long(),
             'input_ids': torch.tensor(features.input_ids).long(),
             'attention_mask': torch.tensor(features.input_mask).long(),
+            'token_type_ids': torch.tensor(features.input_type_ids).long(),
             'start_positions': torch.tensor(ans_start[0]).long(),
             'end_positions': torch.tensor(ans_end[0]).long()
         }
-
-        if features.input_type_ids is not None:
-            example['token_type_ids'] = torch.tensor(
-                features.input_type_ids).long()
 
         return example
 
