@@ -104,15 +104,17 @@ class QAFinetuneModel(pl.LightningModule):
         ]
 
         answers, predicted = self.datamodule.post_process_data(
-            predicted_starts, predicted_ends)
+            predicted_starts, predicted_ends, stage)
+
+        self._log_predictions(answers, predicted)
 
         f1_score = squad_v1_f1(answers, predicted)
         em_score = squad_v1_exact_match(answers, predicted)
 
         eval_result = pl.EvalResult()
 
-        eval_result.log('f1', torch.tensor(f1_score))
-        eval_result.log('em', torch.tensor(em_score))
+        eval_result.log(f'{stage}-f1', torch.tensor(f1_score))
+        eval_result.log(f'{stage}-em', torch.tensor(em_score))
 
         return eval_result
 
@@ -120,3 +122,15 @@ class QAFinetuneModel(pl.LightningModule):
         # We get a reference to the datamodule in use
         # so we can calculate SQuAD metrics properly
         self.datamodule = getattr(self.trainer, 'datamodule', None)
+
+    def _log_predictions(self, groud_truth, predictions):
+        if self.logger and self.logger.experiment \
+                and self.logger.experiment.log_sample:
+
+            for i, truth, pred in enumerate(zip(groud_truth, predictions)):
+                truth = ';'.join(groud_truth)
+                sample = f'Sample: {i}. Truth: {truth}. Prediction: {pred}.'
+                self.logger.experiment.log_sample(tag='qa',
+                                                  sample_text=sample,
+                                                  global_step=self.global_step,
+                                                  epoch=self.current_epoch)
