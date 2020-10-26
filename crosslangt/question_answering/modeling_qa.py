@@ -127,7 +127,7 @@ class QAFinetuneModel(pl.LightningModule):
         if self.logger and self.logger.experiment \
                 and self.logger.experiment.log_sample:
 
-            for i, truth, pred in enumerate(zip(groud_truth, predictions)):
+            for i, (truth, pred) in enumerate(zip(groud_truth, predictions)):
                 truth = ';'.join(groud_truth)
                 sample = f'Sample: {i}. Truth: {truth}. Prediction: {pred}.'
                 self.logger.experiment.log_sample(tag='qa',
