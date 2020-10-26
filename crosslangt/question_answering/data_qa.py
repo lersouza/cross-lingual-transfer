@@ -49,9 +49,15 @@ KNWON_QA_DATASETS = {
     },
     'sbersquad': {
         'url':
+        'http://files.deeppavlov.ai/datasets/sber_squad-v1.1.tar.gz',
+        'original_dataset_name': 'SberSQuAD',
+    },
+    'sbersquad-clean': {
+        'url':
         'http://files.deeppavlov.ai/datasets/sber_squad_clean-v1.1.tar.gz',
         'original_dataset_name': 'SberSQuADClean',
     }
+
 }
 
 
