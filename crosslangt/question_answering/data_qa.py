@@ -19,7 +19,8 @@ from deeppavlov.dataset_iterators.squad_iterator import SquadIterator
 from deeppavlov.models.preprocessors.squad_preprocessor import (
     SquadBertAnsPostprocessor, SquadBertMappingPreprocessor,
     SquadBertAnsPreprocessor)
-from transformers.data.processors.squad import SquadResult
+from deeppavlov.models.tokenizers.jieba_tokenizer import JiebaTokenizer
+
 
 logger = logging.getLogger('data_qa')
 
@@ -106,7 +107,8 @@ class SquadDataModule(pl.LightningDataModule):
                  test_split: str = 'eval',
                  preprocess_threads: int = 1,
                  dataset_custom_config: Dict[str, Dict] = None,
-                 do_lower_case: bool = False) -> None:
+                 do_lower_case: bool = False,
+                 apply_jieba_on_post: bool = False) -> None:
 
         super().__init__()
 
@@ -132,6 +134,7 @@ class SquadDataModule(pl.LightningDataModule):
         self.tokenizer_name = tokenizer_name
         self.do_lower_case = do_lower_case
         self.data_key = data_key
+        self.apply_jieba_on_post = apply_jieba_on_post
 
     def train_dataloader(self, *args, **kwargs) -> DataLoader:
         return DataLoader(self.train_dataset,
@@ -246,11 +249,19 @@ class SquadDataModule(pl.LightningDataModule):
         post_processor = SquadBertAnsPostprocessor()
         dataset = self.eval_dataset if phase == 'eval' else self.test_dataset
 
-        ans_predicted, ans_start_predicted, ans_end_predicted = post_processor(
+        ans_predicted, _, _ = post_processor(
             predicted_starts, predicted_ends, dataset.contexts_raw,
             dataset.input_features, dataset.tok2char)
 
-        return dataset.answers, ans_predicted
+        ans = dataset.answers
+
+        if self.apply_jieba_on_post is True:
+            jieba = JiebaTokenizer()  # Handling Chinese Chars
+
+            ans = jieba(ans)
+            ans_predicted = jieba(ans_predicted)
+
+        return ans, ans_predicted
 
     def _gen_dataset_filename(self, split: str):
         suffix = f'-{self.data_key}' if self.data_key else ''
