@@ -15,6 +15,6 @@ setup(
         'tqdm==4.41.1',
         'lxml>=4.5.2',
         'deeppavlov==0.12.1',
-        'requests==2.22.0'
+        'requests==2.31.0'
     ]
 )
