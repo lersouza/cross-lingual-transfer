@@ -9,7 +9,7 @@ setup(
     install_requires=[
         'torch>=1.5',
         'pytorch-lightning==0.9.0',
-        'transformers==3.0.2',
+        'transformers==4.30.0',
         'requests',
         'nltk==3.4.5',
         'tqdm==4.41.1',
